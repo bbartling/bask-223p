@@ -116,6 +116,9 @@ Niagara points without a BACnet address (e.g. `NullProxyExt` folders) receive a 
 warning rather than a broken reference. Quantifiable properties get a QUDT unit and QuantityKind
 from the unit (never guessed from the point name); numeric points without a resolved unit/QuantityKind
 omit `s223:QuantifiableProperty` so they do not fail 223P's `qudt:hasQuantityKind` SHACL constraint.
+Niagara water-column spellings such as `in/wc`, `inH2O`, and `in. W.C.` map to official `unit:IN_H2O`
+and `quantitykind:Pressure`. BACnet File `file-size` (octets per ASHRAE 135, often with no facet unit)
+uses official `unit:BYTE` and `quantitykind:ByteDataVolume` rather than an invented term.
 Boolean points use `s223:EnumerationKind-Binary`; other enumerations get a local `EnumerationKind`
 labelled from the facet range.
 

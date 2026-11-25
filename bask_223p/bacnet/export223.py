@@ -64,7 +64,7 @@ from .units import (
     UNIT,
     map_quantity_kind,
     map_qudt_unit,
-    resolve_unit_and_quantity_kind,
+    resolve_point_unit_and_quantity_kind, resolve_unit_and_quantity_kind,
 )
 
 S223_ONTOLOGY = URIRef("http://data.ashrae.org/standard223/1.0/model/all")
@@ -336,12 +336,6 @@ def build_223p_graphs(
 
             qudt_unit = str(pt.get("qudt_unit") or "").strip() or None
             qk_name = str(pt.get("quantity_kind") or "").strip() or None
-            if qudt_unit is None and unit_raw:
-                qudt_unit, qk_name = resolve_unit_and_quantity_kind(unit_raw)
-            elif qudt_unit and qk_name is None:
-                qk_name = map_quantity_kind(qudt_unit)
-                qk_name = str(qk_name).rsplit("/", 1)[-1] if qk_name is not None else None
-            qk_uri = QK[qk_name] if qk_name else None
 
             bac = dict(pt.get("bacnet") or {})
             obj_type = bac.get("object_type")
@@ -350,6 +344,15 @@ def build_223p_graphs(
                 parsed = parse_bacnet_object_id(str(bac["object_identifier"]).replace(",", ":"))
                 if parsed:
                     obj_type, obj_inst = parsed
+            prop_for_unit = normalize_property_identifier(str(bac.get("property_identifier") or "present-value")) if bac else None
+            if qudt_unit is None:
+                qudt_unit, qk_name = resolve_point_unit_and_quantity_kind(
+                    unit_raw or None, str(obj_type) if obj_type is not None else None, prop_for_unit
+                )
+            elif qk_name is None:
+                qk_name = map_quantity_kind(qudt_unit)
+                qk_name = str(qk_name).rsplit("/", 1)[-1] if qk_name is not None else None
+            qk_uri = QK[qk_name] if qk_name else None
 
             if (obj_type is None or obj_inst is None) and dev_instance is not None and infer_demo_ids:
                 obj_type, obj_inst = _infer_demo_bacnet_id(value_kind, writable, pt_name, demo_counters)
@@ -668,7 +671,12 @@ def coverage_223p(
         for pt in dev.get("points") or []:
             name = decode_n4_slot_text(str(pt.get("display") or pt.get("name") or ""))
             unit_raw = str((pt.get("facets") or {}).get("units") or "")
-            qudt_unit, qk_name = resolve_unit_and_quantity_kind(unit_raw)
+            bac = pt.get("bacnet") or {}
+            qudt_unit, qk_name = resolve_point_unit_and_quantity_kind(
+                unit_raw or None,
+                bac.get("object_type"),
+                bac.get("property_identifier"),
+            )
             row: dict[str, Any] = {
                 "device": dev.get("name"),
                 "name": name,

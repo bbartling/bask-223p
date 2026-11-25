@@ -23,12 +23,13 @@ from bask_223p.bacnet.refs import (
     BRICK_REF,
     NIAGARA,
     S223,
+    BacnetPoint,
     load_points_scan,
     niagara_object_uri,
     niagara_reference_iri,
     reference_iri,
 )
-from bask_223p.bacnet.units import resolve_qudt_unit, resolve_unit_and_quantity_kind
+from bask_223p.bacnet.units import implied_unit_for_bacnet_property, resolve_point_unit_and_quantity_kind, resolve_qudt_unit, resolve_unit_and_quantity_kind
 
 ROOT = Path(__file__).resolve().parents[1]
 BASE = "https://example.org/parity"
@@ -47,6 +48,19 @@ def test_shared_units_helper_caches_and_resolves_both_formats():
     assert resolve_unit_and_quantity_kind("EngineeringUnits.cubic-feet-per-minute") == ("FT3-PER-MIN", "VolumeFlowRate")
     assert resolve_unit_and_quantity_kind("percent-relative-humidity") == ("PERCENT_RH", "RelativeHumidity")
     assert resolve_unit_and_quantity_kind("null") == (None, None)
+
+    # Niagara inches-of-water-column spellings
+    for raw in ("in/wc", "inH2O", "inH₂O", "in. W.C.", "in.w.c.", "inches of water column", "inches-of-water"):
+        assert resolve_unit_and_quantity_kind(raw) == ("IN_H2O", "Pressure"), raw
+
+    # BACnet File file-size is octets; official QUDT unit:BYTE / quantitykind:ByteDataVolume
+    assert implied_unit_for_bacnet_property("file", "file-size") == ("BYTE", "ByteDataVolume")
+    assert implied_unit_for_bacnet_property("file", "42@bacnet:bacnet-property-identifier") == ("BYTE", "ByteDataVolume")
+    assert implied_unit_for_bacnet_property("analog-input", "present-value") == (None, None)
+    assert resolve_point_unit_and_quantity_kind("null", "file", "file-size") == ("BYTE", "ByteDataVolume")
+    assert resolve_point_unit_and_quantity_kind("", "file", "42") == ("BYTE", "ByteDataVolume")
+    # A resolved facet unit wins over the implied BACnet file-size unit
+    assert resolve_point_unit_and_quantity_kind("byte", "file", "file-size") == ("BYTE", "ByteDataVolume")
 
     # Second call hits lru_cache
     assert resolve_qudt_unit("°F") == "DEG_F"
@@ -258,3 +272,89 @@ def test_null_proxy_ext_points_get_niagara_ref_and_zero_shacl_violations():
         off = validate_official_223p(g, SHAPES)
         assert off["conforms"] is True
         assert off["violation_count"] == 0, off["violations"]
+
+def test_in_wc_and_filesize_units_in_223p_graph():
+    """Niagara in/wc and BACnet file-size emit official QUDT terms, not QuantifiableProperty violations."""
+    snap = {
+        "format": "baskstream-discovery-snapshot",
+        "version": 1,
+        "devices": [
+            {
+                "ord": "slot:/Drivers/BacnetNetwork/Bench",
+                "name": "Bench",
+                "device_instance": 5007,
+                "bacnet_device_name": "Bench",
+                "points": [
+                    {
+                        "ord": "slot:/Drivers/BacnetNetwork/Bench/points/DUCT-P",
+                        "name": "DUCT-P",
+                        "display": "DUCT-P",
+                        "typeSpec": "control:NumericPoint",
+                        "valueKind": "numeric",
+                        "writable": False,
+                        "facets": {"units": "in/wc", "precision": 2},
+                        "bacnet": {
+                            "object_type": "analog-input",
+                            "object_instance": 9334,
+                            "object_identifier": "analog-input,9334",
+                            "property_identifier": "85@bacnet:bacnet-property-identifier",
+                        },
+                    },
+                    {
+                        "ord": "slot:/Drivers/BacnetNetwork/Bench/points/Boot-fileSize",
+                        "name": "Boot-fileSize",
+                        "display": "8-1.Boot-fileSize",
+                        "typeSpec": "control:NumericPoint",
+                        "valueKind": "numeric",
+                        "writable": False,
+                        "facets": {"units": "null", "precision": 1},
+                        "bacnet": {
+                            "object_type": "file",
+                            "object_instance": 1,
+                            "object_identifier": "file,1",
+                            "property_identifier": "42@bacnet:bacnet-property-identifier",
+                        },
+                    },
+                ],
+            }
+        ],
+    }
+    g, _ng, bacnet_pts, summary = build_223p_graphs(snap, BASE)
+    assert summary["bacnet_bound_points"] == 2
+    assert summary["qudt_units_unmapped"] == []
+
+    by_oid = {p.object_id: p for p in bacnet_pts}
+    assert by_oid["analog-input,9334"].qudt_unit == "IN_H2O"
+    assert by_oid["analog-input,9334"].quantity_kind == "Pressure"
+    assert by_oid["analog-input,9334"].property_identifier == "present-value"
+    assert by_oid["file,1"].qudt_unit == "BYTE"
+    assert by_oid["file,1"].quantity_kind == "ByteDataVolume"
+    assert by_oid["file,1"].property_identifier == "file-size"
+
+    duct = next(s for s in g.subjects(RDF.type, S223.QuantifiableObservableProperty)
+                if (s, QUDT.hasUnit, UNIT.IN_H2O) in g)
+    assert (duct, QUDT.hasQuantityKind, QK.Pressure) in g
+    fsz = next(s for s in g.subjects(RDF.type, S223.QuantifiableObservableProperty)
+               if (s, QUDT.hasUnit, UNIT.BYTE) in g)
+    assert (fsz, QUDT.hasQuantityKind, QK.ByteDataVolume) in g
+    # Official terms only — do not invent a local quantity kind
+    assert (fsz, QUDT.hasQuantityKind, QK.ByteDataVolume) in g
+
+    # Scan-path BacnetPoint agrees (shared model)
+    scan_pt = BacnetPoint(
+        device_instance=5007,
+        object_type="file",
+        object_instance=1,
+        object_name="Boot-fileSize",
+        property_identifier="42@bacnet:bacnet-property-identifier",
+        unit_raw="null",
+    )
+    assert scan_pt.property_identifier == "file-size"
+    assert scan_pt.qudt_unit == "BYTE"
+    assert scan_pt.quantity_kind == "ByteDataVolume"
+
+    if SHAPES and SHAPES.is_file():
+        off = validate_official_223p(g, SHAPES)
+        assert off["violation_count"] == 0, off["violations"]
+        assert off["conforms"] is True
+

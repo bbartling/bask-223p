@@ -38,6 +38,9 @@ def test_normalize_object_type_aliases():
     assert normalize_object_type("AI") == "analog-input"
     assert normalize_object_type("multiStateValue") == "multi-state-value"
     assert normalize_property_identifier("presentValue") == "present-value"
+    assert normalize_property_identifier("85@bacnet:bacnet-property-identifier") == "present-value"
+    assert normalize_property_identifier("42@bacnet:bacnet-property-identifier") == "file-size"
+    assert normalize_property_identifier("fileSize") == "file-size"
     assert object_identifier("analogValue", 2) == "analog-value,2"
     assert IDENT_PATTERN.fullmatch("analog-input,2")
     assert not IDENT_PATTERN.fullmatch("analog-input,0")

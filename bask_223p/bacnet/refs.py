@@ -28,7 +28,7 @@ from rdflib import Graph, Literal, Namespace, URIRef
 from rdflib.namespace import RDF, RDFS, XSD
 
 from ..model.graph import valid_external_iri
-from .units import map_quantity_kind_name, resolve_unit_and_quantity_kind
+from .units import map_quantity_kind_name, resolve_point_unit_and_quantity_kind
 
 BACNET = Namespace("http://data.ashrae.org/bacnet/2020#")
 BACNET_2024 = Namespace("http://data.ashrae.org/bacnet/2024#")
@@ -86,10 +86,25 @@ def normalize_object_type(value: str) -> str:
     return hyphen
 
 
+# Well-known ASHRAE 135 property identifiers (enum number or compact name).
+_PROPERTY_IDENTIFIER_ALIASES = {
+    "42": "file-size",
+    "filesize": "file-size",
+    "85": "present-value",
+    "presentvalue": "present-value",
+}
+
+
 def normalize_property_identifier(value: str | None) -> str:
     raw = (value or "present-value").strip() or "present-value"
+    if "@" in raw:
+        # Niagara enum encoding, e.g. "42@bacnet:bacnet-property-identifier".
+        raw = raw.split("@", 1)[0].strip() or raw
     hyphen = re.sub(r"([a-z0-9])([A-Z])", r"\1-\2", raw)
-    return hyphen.replace("_", "-").replace(" ", "-").casefold()
+    hyphen = hyphen.replace("_", "-").replace(" ", "-").casefold()
+    hyphen = re.sub(r"-{2,}", "-", hyphen)
+    compact = hyphen.replace("-", "")
+    return _PROPERTY_IDENTIFIER_ALIASES.get(hyphen) or _PROPERTY_IDENTIFIER_ALIASES.get(compact) or hyphen
 
 
 
@@ -208,12 +223,16 @@ class BacnetPoint:
         self.unit_raw = (self.unit_raw or "").strip()
         self.qudt_unit = (self.qudt_unit or "").strip()
         self.quantity_kind = (self.quantity_kind or "").strip()
-        if not self.qudt_unit and self.unit_raw:
-            qudt_u, qk_name = resolve_unit_and_quantity_kind(self.unit_raw)
+        if not self.qudt_unit:
+            qudt_u, qk_name = resolve_point_unit_and_quantity_kind(
+                self.unit_raw or None,
+                self.object_type,
+                self.property_identifier,
+            )
             self.qudt_unit = qudt_u or ""
             if not self.quantity_kind:
                 self.quantity_kind = qk_name or ""
-        elif self.qudt_unit and not self.quantity_kind:
+        elif not self.quantity_kind:
             self.quantity_kind = map_quantity_kind_name(self.qudt_unit) or ""
 
     @property

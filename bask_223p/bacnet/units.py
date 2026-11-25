@@ -31,6 +31,14 @@ QUDT_UNIT_MAP: dict[str, str] = {
     "inh2o": "IN_H2O",
     "inh₂o": "IN_H2O",
     "inchesofwater": "IN_H2O",
+    "inwc": "IN_H2O",
+    "inchesofwatercolumn": "IN_H2O",
+    "inchofwatercolumn": "IN_H2O",
+    "incheswatercolumn": "IN_H2O",
+    "byte": "BYTE",
+    "bytes": "BYTE",
+    "octet": "BYTE",
+    "octets": "BYTE",
     "cfm": "FT3-PER-MIN",
     "cubicfeetperminute": "FT3-PER-MIN",
     "m3/s": "M3-PER-SEC",
@@ -83,6 +91,7 @@ QUANTITY_KIND_FROM_UNIT: dict[str, str] = {
     "DEG_C": "Temperature",
     "DEG_K": "Temperature",
     "IN_H2O": "Pressure",
+    "BYTE": "ByteDataVolume",
     "PA": "Pressure",
     "KiloPA": "Pressure",
     "PSI": "Pressure",
@@ -99,7 +108,13 @@ QUANTITY_KIND_FROM_UNIT: dict[str, str] = {
 }
 
 _NULL_UNIT_TOKENS = frozenset({"", "null", "none", "no-units", "nounits"})
-_COMPACT_RE = re.compile(r"[\s_\-]+")
+# Also strip slash and dot so Niagara "in/wc" and "in. W.C." compact to "inwc".
+_COMPACT_RE = re.compile(r"[\s_\-./]+")
+
+# ASHRAE 135 File object file-size is in octets. Official QUDT: unit:BYTE
+# (exactMatch unit:OCTET) hasQuantityKind quantitykind:ByteDataVolume
+# (also AmountOfData, DatasetOfBytes). Do not invent terms.
+_FILE_SIZE_PROPERTIES = frozenset({"file-size", "filesize", "42"})
 
 
 @lru_cache(maxsize=512)
@@ -166,6 +181,40 @@ def resolve_unit_and_quantity_kind(unit_text: str | None) -> tuple[str | None, s
     return qudt_unit, map_quantity_kind_name(qudt_unit)
 
 
+@lru_cache(maxsize=256)
+def implied_unit_for_bacnet_property(
+    object_type: str | None,
+    property_identifier: str | None,
+) -> tuple[str | None, str | None]:
+    """Return an official QUDT unit/QuantityKind implied by the BACnet property, if any.
+
+    Used only when the point itself carries no unit (e.g. File ``file-size`` is
+    defined in octets by ASHRAE 135 and has no EngineeringUnits). Returns
+    official QUDT terms only.
+    """
+    typ = (object_type or "").replace("_", "-").replace(" ", "-").casefold()
+    prop = (property_identifier or "").strip()
+    if "@" in prop:
+        prop = prop.split("@", 1)[0].strip()
+    prop = prop.replace("_", "-").replace(" ", "-").casefold()
+    if typ == "file" and (prop in _FILE_SIZE_PROPERTIES or prop.replace("-", "") == "filesize"):
+        return "BYTE", "ByteDataVolume"
+    return None, None
+
+
+@lru_cache(maxsize=512)
+def resolve_point_unit_and_quantity_kind(
+    unit_text: str | None,
+    object_type: str | None = None,
+    property_identifier: str | None = None,
+) -> tuple[str | None, str | None]:
+    """Resolve a facet/scan unit, else a standards-implied BACnet property unit."""
+    qudt_unit, qk_name = resolve_unit_and_quantity_kind(unit_text)
+    if qudt_unit:
+        return qudt_unit, qk_name
+    return implied_unit_for_bacnet_property(object_type, property_identifier)
+
+
 __all__ = [
     "BACNET_UNIT_QUDT",
     "QK",
@@ -173,9 +222,11 @@ __all__ = [
     "QUDT",
     "QUDT_UNIT_MAP",
     "UNIT",
+    "implied_unit_for_bacnet_property",
     "map_quantity_kind",
     "map_quantity_kind_name",
     "map_qudt_unit",
+    "resolve_point_unit_and_quantity_kind",
     "resolve_qudt_unit",
     "resolve_unit_and_quantity_kind",
 ]

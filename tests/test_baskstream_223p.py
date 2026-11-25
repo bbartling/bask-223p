@@ -44,6 +44,8 @@ def test_parse_bacnet_id_facets_and_qudt_units():
     assert parse_facets_string("units=u:°F|precision=i:1") == {"units": "°F", "precision": 1}
     assert map_qudt_unit("°F") == "DEG_F"
     assert map_qudt_unit("inH₂O") == "IN_H2O"
+    assert map_qudt_unit("in/wc") == "IN_H2O"
+    assert map_qudt_unit("in. W.C.") == "IN_H2O"
     assert map_qudt_unit("%RH") == "PERCENT_RH"
     assert map_qudt_unit("null") is None
 
