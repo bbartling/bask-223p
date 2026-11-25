@@ -278,6 +278,8 @@ class ReadOnlyBaskStreamClient:
             req_headers["Cookie"] = cookie
         if headers:
             req_headers.update(headers)
+        if self._auth_header and "Authorization" not in req_headers:
+            req_headers["Authorization"] = self._auth_header
         resp = self.session.request(
             method=method,
             url=self.station + path,
@@ -299,13 +301,24 @@ class ReadOnlyBaskStreamClient:
                 raise BaskStreamError(f"/stream/health returned invalid JSON: {exc}") from exc
         return None
 
+    def _basic_auth_header(self, username: str, password: str) -> str:
+        tok = base64.b64encode(f"{username}:{password}".encode("utf-8")).decode("ascii")
+        return f"Basic {tok}"
+
     def login(self, username: str, password: str) -> dict[str, Any]:
+        """Niagara web login. Tries form SCRAM-SHA-256 first, then HTTP Basic.
+
+        Some Niagara 4.15 / JENEsys builds accept HTTP Basic on ``/stream/health``
+        and the WebSocket even when the form SCRAM final message returns an empty
+        or ``null`` body (no ``v=``). Credentials are never logged.
+        """
+        self.auth_mode = None
         if self.send_auth_header:
-            tok = base64.b64encode(f"{username}:{password}".encode("utf-8")).decode("ascii")
-            self._auth_header = f"Basic {tok}"
+            self._auth_header = self._basic_auth_header(username, password)
 
         already = self.health()
         if already:
+            self.auth_mode = "http-basic" if self._auth_header else "session"
             return already
 
         self._http("GET", "/prelogin")
@@ -355,14 +368,14 @@ class ReadOnlyBaskStreamClient:
             body=f"action=sendClientFinalMessage&clientFinalMessage={client_final_no_proof},p={proof_b64}",
             headers={"Content-Type": "application/x-niagara-login-support"},
         )
+        final_text = final.text.strip()
+        final_parsed = _parse_scram(final_text)
+        scram_failed: str | None = None
         if final.status_code != 200:
-            raise BaskStreamError(f"SCRAM final message failed: HTTP {final.status_code}")
-
-        # Verify SCRAM ServerSignature when returned by the station.
-        final_parsed = _parse_scram(final.text.strip())
-        if "e" in final_parsed:
-            raise BaskStreamError(f"SCRAM server error: {final_parsed['e']}")
-        if "v" in final_parsed:
+            scram_failed = f"SCRAM final message failed: HTTP {final.status_code}"
+        elif "e" in final_parsed:
+            scram_failed = f"SCRAM server error: {final_parsed['e']}"
+        elif "v" in final_parsed:
             server_key = hmac.new(salted, b"Server Key", hashlib.sha256).digest()
             expected_sig = base64.b64encode(hmac.new(server_key, auth_msg, hashlib.sha256).digest()).decode("ascii")
             if not hmac.compare_digest(final_parsed["v"], expected_sig):
@@ -371,18 +384,35 @@ class ReadOnlyBaskStreamClient:
         elif self.require_server_signature:
             raise BaskStreamError("SCRAM server-final message carried no server signature (v=)")
 
-        self._http("GET", "/j_security_check/")
+        if not scram_failed:
+            self._http("GET", "/j_security_check/")
+            health = self.health()
+            if health:
+                self.auth_mode = "scram"
+                return health
+            if final_text in {"", "null", "None"}:
+                scram_failed = "SCRAM final message returned no server signature (empty/null body)"
+            else:
+                scram_failed = "/stream/health did not return 200 after Niagara SCRAM login"
+
+        # Fall back to HTTP Basic for /stream/health and the WebSocket handshake.
+        saved_header = self._auth_header
+        self._auth_header = self._basic_auth_header(username, password)
         health = self.health()
-        if not health:
-            raise BaskStreamError("/stream/health did not return 200 after Niagara login")
-        return health
+        if health:
+            self.auth_mode = "http-basic"
+            return health
+        self._auth_header = saved_header
+        raise BaskStreamError(
+            f"{scram_failed}; HTTP Basic fallback for /stream/health also failed"
+        )
 
     def connect(self) -> None:
         import websocket
 
         cookie_header = self.cookies.header()
-        if not cookie_header:
-            raise BaskStreamError("No Niagara session cookies available; call login() first.")
+        if not cookie_header and not self._auth_header:
+            raise BaskStreamError("No Niagara session cookies or Authorization header available; call login() first.")
         parsed = urlparse(self.station)
         if parsed.scheme == "https":
             ws_url = f"wss://{parsed.netloc}/stream"
@@ -641,6 +671,187 @@ def _value_kind_from_node(node: dict[str, Any]) -> str:
     return "numeric"
 
 
+
+# Immediate children commonly present under slot:/Drivers. Used only when the
+# configured base itself is blocked by allowedPathPatterns (e.g. slot:/Drivers/*
+# does not match slot:/Drivers).
+_DRIVER_CHILD_CANDIDATES = (
+    "BacnetNetwork",
+    "NiagaraNetwork",
+    "ModbusTcpNetwork",
+    "ModbusAsyncNetwork",
+    "LonNetwork",
+    "SnmpNetwork",
+    "FEC_Proxys",
+    "NF_Proxies",
+)
+
+
+def _collect_discovery_nodes(
+    client: ReadOnlyBaskStreamClient,
+    base: str,
+    limit: int,
+    warnings: list[str],
+) -> tuple[dict[str, Any], list[dict[str, Any]], list[str]]:
+    """Browse/search ``base``, or its immediate children if the parent is forbidden."""
+    extra_folders: list[str] = []
+    try:
+        root_browse = (client.browse(base, depth=1, metadata="full") or {}).get("node") or {}
+        search_res = (client.search(base, metadata="full", limit=limit) or {}).get("result") or {}
+        all_nodes = list(search_res.get("nodes") or [])
+        if search_res.get("truncated"):
+            warnings.append(
+                f"search under {base} truncated ({','.join(search_res.get('truncatedReasons') or []) or 'unknown'}); "
+                "raise --limit or narrow --slot-base"
+            )
+        extra_folders.append(base)
+        return root_browse, all_nodes, extra_folders
+    except BaskStreamError as exc:
+        msg = str(exc)
+        if "forbidden_point" not in msg:
+            raise
+        warnings.append(
+            f"{base} is outside allowedPathPatterns (the parent folder is not included). "
+            "On the station, set Allowed Path Patterns to include the folder itself, "
+            "e.g. slot:/Drivers or slot:/Drivers/** (slot:/Drivers/* matches children only)."
+        )
+
+    root_browse: dict[str, Any] = {}
+    all_nodes: list[dict[str, Any]] = []
+    found: list[str] = []
+    for name in _DRIVER_CHILD_CANDIDATES:
+        child = f"{base.rstrip('/')}/{name}"
+        try:
+            node = (client.browse(child, depth=1, metadata="full") or {}).get("node") or {}
+        except BaskStreamError:
+            continue
+        found.append(child)
+        extra_folders.append(child)
+        all_nodes.append(node)
+        all_nodes.extend(node.get("children") or [])
+        try:
+            search_res = (client.search(child, metadata="full", limit=limit) or {}).get("result") or {}
+            all_nodes.extend(search_res.get("nodes") or [])
+            if search_res.get("truncated"):
+                warnings.append(f"search under {child} truncated")
+        except BaskStreamError as exc:
+            warnings.append(f"search under {child} failed: {exc}")
+    if not found:
+        raise BaskStreamError(
+            f"{base} is forbidden and no well-known child folders were readable. "
+            "Widen allowedPathPatterns or pass --slot-base at a child such as slot:/Drivers/BacnetNetwork."
+        )
+    warnings.append("Discovered under: " + ", ".join(found))
+    return root_browse, all_nodes, extra_folders
+
+
+
+def _is_exportable_point(pt: dict[str, Any]) -> bool:
+    """True for Niagara control points; skip proxyExt children and timers."""
+    ts = str(pt.get("typeSpec") or "").casefold()
+    if "proxyext" in ts or "timetrigger" in ts:
+        return False
+    kind = str(pt.get("kind") or "").casefold()
+    if kind == "point":
+        return True
+    cls = ((pt.get("metadata") or {}).get("classification") or {})
+    if cls.get("isProxyPoint") or cls.get("isPoint") or cls.get("isWritablePoint"):
+        return True
+    name = ts.rsplit(":", 1)[-1]
+    return name.endswith("point") or name.endswith("writable")
+
+
+def _point_entry(client: ReadOnlyBaskStreamClient, pt: dict[str, Any], pt_ord: str) -> dict[str, Any]:
+    if "metadata" not in pt:
+        pt = (client.describe(pt_ord, metadata="full") or {}).get("node") or pt
+    meta = pt.get("metadata") or {}
+    pt_meta = meta.get("point") or {}
+    facets = coerce_facets(meta.get("facets") or pt_meta.get("facets"))
+    proxy = _extract_point_proxy_bacnet(client, pt_ord)
+    if not facets and proxy.get("facets_encoded"):
+        facets = parse_facets_string(proxy["facets_encoded"])
+
+    writable = bool(pt.get("writable") or pt_meta.get("writable"))
+    active_ord = pt_meta.get("activeLevelOrdinal")
+    write_pri = proxy.get("priority_for_writing")
+    if write_pri is None and writable and isinstance(active_ord, int) and 1 <= active_ord <= 16:
+        write_pri = active_ord
+
+    tags_raw = meta.get("tags") or []
+    hs_tags: list[str] = []
+    for t in tags_raw:
+        tid = str(t.get("id") or "")
+        if tid.startswith("hs:"):
+            hs_tags.append(tid.split(":", 1)[1])
+
+    pt_entry: dict[str, Any] = {
+        "ord": pt_ord,
+        "name": str(pt.get("name") or ""),
+        "display": str(pt.get("display") or pt.get("name") or ""),
+        "typeSpec": str(pt.get("typeSpec") or ""),
+        "valueKind": _value_kind_from_node(pt),
+        "writable": writable,
+        "facets": facets,
+        "haystackTags": sorted(set(hs_tags)),
+        "tags": tags_raw,
+    }
+    if "object_type" in proxy and "object_instance" in proxy:
+        pt_entry["bacnet"] = {
+            "object_type": proxy["object_type"],
+            "object_instance": proxy["object_instance"],
+            "object_identifier": proxy["object_id"],
+            "property_identifier": proxy.get("property_identifier", "present-value"),
+        }
+        if "property_array_index" in proxy:
+            pt_entry["bacnet"]["property_array_index"] = proxy["property_array_index"]
+        if write_pri is not None:
+            pt_entry["bacnet"]["priority_for_writing"] = write_pri
+    elif write_pri is not None:
+        pt_entry["priority_for_writing"] = write_pri
+    return pt_entry
+
+
+def _append_folder_points(
+    client: ReadOnlyBaskStreamClient,
+    devices_out: list[dict[str, Any]],
+    folders: list[str],
+    limit: int,
+    warnings: list[str],
+) -> None:
+    """Add points that live under a Drivers child folder but not under a BacnetDevice."""
+    seen = {p["ord"] for d in devices_out for p in d["points"]}
+    for folder in folders:
+        try:
+            pt_search = (client.search(folder, features=["point"], metadata="full", limit=limit) or {}).get("result") or {}
+        except BaskStreamError as exc:
+            warnings.append(f"point search under {folder} failed: {exc}")
+            continue
+        leftover: list[dict[str, Any]] = []
+        for pt in pt_search.get("nodes") or []:
+            pt_ord = str(pt.get("slotPath") or pt.get("ord") or "")
+            if not pt_ord or pt_ord in seen:
+                continue
+            if not _is_exportable_point(pt):
+                continue
+            leftover.append(_point_entry(client, pt, pt_ord))
+            seen.add(pt_ord)
+        if not leftover:
+            continue
+        try:
+            node = (client.describe(folder, metadata="full") or {}).get("node") or {}
+        except BaskStreamError:
+            node = {}
+        devices_out.append({
+            "ord": folder,
+            "name": str(node.get("display") or node.get("name") or folder.rsplit("/", 1)[-1]),
+            "typeSpec": str(node.get("typeSpec") or ""),
+            "device_instance": None,
+            "bacnet_device_name": "",
+            "tags": (node.get("metadata") or {}).get("tags") or [],
+            "points": leftover,
+        })
+
+
 def discover_station_snapshot(
     station: str,
     *,
@@ -674,18 +885,15 @@ def discover_station_snapshot(
         station, insecure=insecure, timeout=timeout, send_auth_header=ws_auth_header
     ) as client:
         health = client.login(username, password)
+        if getattr(client, "auth_mode", None) == "http-basic":
+            warnings.append(
+                "Niagara form SCRAM did not establish a session; logged in to /stream with HTTP Basic"
+            )
         client.connect()
         client.ping()
         caps = (client.capabilities() or {}).get("capabilities") or {}
 
-        root_browse = (client.browse(base, depth=1, metadata="full") or {}).get("node") or {}
-        search_res = (client.search(base, metadata="full", limit=limit) or {}).get("result") or {}
-        all_nodes = search_res.get("nodes") or []
-        if search_res.get("truncated"):
-            warnings.append(
-                f"search under {base} truncated ({','.join(search_res.get('truncatedReasons') or []) or 'unknown'}); "
-                "raise --limit or narrow --slot-base"
-            )
+        root_browse, all_nodes, extra_folders = _collect_discovery_nodes(client, base, limit, warnings)
 
         device_nodes: list[dict[str, Any]] = []
         seen_devs: set[str] = set()
@@ -715,6 +923,8 @@ def discover_station_snapshot(
             for pt in pt_nodes:
                 pt_ord = str(pt.get("slotPath") or pt.get("ord") or "")
                 if not pt_ord:
+                    continue
+                if not _is_exportable_point(pt):
                     continue
                 if "metadata" not in pt:
                     pt = (client.describe(pt_ord, metadata="full") or {}).get("node") or pt
@@ -773,6 +983,8 @@ def discover_station_snapshot(
                 "tags": (desc_node.get("metadata") or {}).get("tags") or [],
                 "points": points_out,
             })
+
+        _append_folder_points(client, devices_out, extra_folders, limit, warnings)
 
         sig_verified = bool(getattr(client, "server_signature_verified", False))
         for notice in getattr(client, "notices", None) or []:
