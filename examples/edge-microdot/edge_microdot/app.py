@@ -216,13 +216,13 @@ def create_app(
     @protect
     async def run_sparql(request):
         if not sparql.enabled:
-            return Response.body("SPARQL disabled", status_code=503)
+            return Response("SPARQL disabled", status_code=503)
         body = request.json or {}
         query = body.get("query") or DEFAULT_SPARQL
         try:
             return sparql.query(query)
         except Exception as exc:
-            return Response.body(str(exc), status_code=400)
+            return Response(str(exc), status_code=400)
 
     @app.get("/sparql/example")
     @protect

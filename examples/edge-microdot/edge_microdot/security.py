@@ -183,7 +183,7 @@ def attach_auth_routes(app, auth: AuthBundle) -> None:
         from microdot import send_file as _send_file
 
         login_path = Path(__file__).resolve().parent / "static" / "login.html"
-        return await _send_file(login_path)
+        return _send_file(str(login_path))
 
     @app.post("/login")
     @with_session
@@ -199,7 +199,7 @@ def attach_auth_routes(app, auth: AuthBundle) -> None:
             password = str(body.get("password") or "")
         user = auth.users.get(username)
         if not user or not auth.users.verify_password(username, password):
-            return Response.body("Invalid credentials", status_code=401)
+            return Response("Invalid credentials", status_code=401)
         session["api_access"] = auth.tokens.issue_pair(user)["access_token"]
         return await auth.login.login_user(request, user, remember=False, redirect_url="/")
 
@@ -224,7 +224,7 @@ def attach_auth_routes(app, auth: AuthBundle) -> None:
         token = str(body.get("refresh_token") or "")
         pair = auth.tokens.refresh(token)
         if not pair:
-            return Response.body("Invalid or expired refresh token", status_code=401)
+            return Response("Invalid or expired refresh token", status_code=401)
         return pair
 
     @app.get("/auth/ws-token")
@@ -277,9 +277,9 @@ def require_token(auth: AuthBundle, request) -> EdgeUser | Response:
         return EdgeUser("anonymous")
     token = extract_bearer_token(request)
     if not token:
-        return Response.body("Unauthorized", status_code=401)
+        return Response("Unauthorized", status_code=401)
     user = auth.tokens.verify_access(token)
     if not user:
-        return Response.body("Unauthorized", status_code=401)
+        return Response("Unauthorized", status_code=401)
     request.g.current_user = user
     return user
