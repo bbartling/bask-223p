@@ -52,6 +52,6 @@ def test_ontoenv_contract_offline_and_imports(tmp_path, monkeypatch):
     ttl.write_text((ROOT/'examples/ontology-imports/profile.ttl').read_text())
     closure, names = closure_from_directory('https://example.org/fdd/validation/profile',tmp_path)
     assert len(closure) > 0 and len(names) == 1
-    assert ('init', {'temporary': True, 'offline': True, 'strict': True,
-                    'search_directories': [str(tmp_path)]}) in calls
-    assert any(name == 'add' and kwargs['fetch_imports'] is False for name,kwargs in calls)
+    assert ('init', {'temporary': True, 'offline': True, 'strict': True}) in calls
+    assert all('search_directories' not in kwargs for name, kwargs in calls if name == 'init')
+    assert any(name == 'add' and kwargs.get('fetch_imports') is False for name, kwargs in calls)

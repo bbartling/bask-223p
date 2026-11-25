@@ -17,8 +17,9 @@ ROOT = Path(__file__).resolve().parents[1]
 def test_infer_does_not_mutate_input_and_writes_delta(tmp_path, monkeypatch):
     original = Graph().parse(data='@prefix ex: <https://example.org/> . ex:a ex:p ex:b .', format='turtle')
     shapes = Graph().parse(str(ROOT/'examples/shapes/site-shapes.ttl'))
-    def fake_infer(data, shp, **kwargs):
-        assert kwargs['in_place'] is False and kwargs['max_iterations'] == 12
+    def fake_infer(data, shp, *, in_place=False, on_unsupported='error', max_iterations=1000, **kwargs):
+        # Signature still accepts max_iterations so older engines keep receiving it.
+        assert in_place is False and max_iterations == 12
         def full():
             copy = Graph()
             copy += data

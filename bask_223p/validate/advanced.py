@@ -6,6 +6,7 @@ None of the operations makes live BACnet writes.
 from __future__ import annotations
 
 import csv
+import inspect
 import json
 from pathlib import Path
 from rdflib import Graph
@@ -29,8 +30,12 @@ def infer(data: Graph, shapes: Graph, out: Path, max_iterations: int = 1000) -> 
     if max_iterations < 2:
         raise ValueError('max_iterations must be >= 2 (last pass checks convergence)')
     shifty = _engine()
-    result = shifty.infer(data, shapes, in_place=False,
-                          on_unsupported='error', max_iterations=max_iterations)
+    infer_kwargs = {'in_place': False, 'on_unsupported': 'error'}
+    # pyshifty 0.6.0 dropped max_iterations (fixed-point is internal). Pass it
+    # only when the installed engine still accepts the argument (0.5.x).
+    if 'max_iterations' in inspect.signature(shifty.infer).parameters:
+        infer_kwargs['max_iterations'] = max_iterations
+    result = shifty.infer(data, shapes, **infer_kwargs)
     graph = result.graph()
     out.mkdir(parents=True, exist_ok=True)
     graph.serialize(destination=str(out/'inferred-model.ttl'), format='turtle')

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import csv
+import inspect
 import json
 from pathlib import Path
 
@@ -15,11 +16,46 @@ def load_graph(path: Path) -> Graph:
     return Graph().parse(str(path))
 
 
+def _accepts_kwarg(fn, name: str) -> bool:
+    try:
+        params = inspect.signature(fn).parameters
+    except (TypeError, ValueError):
+        return False
+    if name in params:
+        return True
+    return any(p.kind is inspect.Parameter.VAR_KEYWORD for p in params.values())
+
+
+def _add_local_ontology(env, location: str) -> None:
+    """Register a local ontology without fetching remote owl:imports.
+
+    OntoEnv 0.6.4 still accepts ``add(..., fetch_imports=False)``. Older
+    builds may only have ``add_no_imports`` or a bare ``add``.
+    """
+    add = getattr(env, "add", None)
+    if callable(add) and _accepts_kwarg(add, "fetch_imports"):
+        add(location, fetch_imports=False)
+        return
+    no_imports = getattr(env, "add_no_imports", None)
+    if callable(no_imports):
+        no_imports(location)
+        return
+    if add is None:
+        raise RuntimeError("OntoEnv has no add() method")
+    add(location)
+
+
 def closure_from_directory(root_iri: str, directory: Path, online: bool = False) -> tuple[Graph, list[str]]:
     """Load local ontology files, resolve owl:imports with OntoEnv, fail if missing.
 
     Remote fetching is OFF by default. Explicit --online enables fetching missing
     dependencies; do not use it on untrusted ontologies without reviewing imports.
+
+    OntoEnv 0.6.4 ``search_directories=`` plus ``offline=True`` and ``strict=True``
+    tries to HTTP-fetch ``owl:imports`` IRIs during construction and raises before
+    local files can satisfy them. Every ontology in ``directory`` is therefore
+    added explicitly with imports-fetch disabled, then the already-loaded graphs
+    are used to resolve the closure.
     """
     try:
         from ontoenv import OntoEnv
@@ -29,10 +65,11 @@ def closure_from_directory(root_iri: str, directory: Path, online: bool = False)
                {'.ttl', '.rdf', '.owl', '.n3', '.nt', '.jsonld'}]
     if not sources:
         raise ValueError(f'No ontology files found in {directory}')
-    with OntoEnv(temporary=True, offline=not online, strict=True,
-                 search_directories=[str(directory)]) as env:
+    # Do not pass search_directories here: 0.6.4 raises under offline+strict
+    # when a local owl:imports IRI is not yet mapped. Adding each file is enough.
+    with OntoEnv(temporary=True, offline=not online, strict=True) as env:
         for source in sources:
-            env.add(str(source), fetch_imports=False)
+            _add_local_ontology(env, str(source))
         # Explicit online opt-in, avoids unexpected fetches from uncontrolled owl:imports.
         if online:
             env.update()
