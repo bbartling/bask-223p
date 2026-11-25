@@ -1,0 +1,7 @@
+outputs/
+var/
+*.duckdb
+*.duckdb.wal
+__pycache__/
+.pytest_cache/
+*.pyc

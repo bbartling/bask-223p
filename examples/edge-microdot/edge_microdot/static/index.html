@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>edge-microdot</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0b0f14;
+      --panel: #141b24;
+      --accent: #3dd6c3;
+      --warn: #ffb020;
+      --alarm: #ff5c5c;
+      --text: #e8eef6;
+      --muted: #8b9bb0;
+      font-family: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: radial-gradient(circle at 20% 0%, #132033, var(--bg)); color: var(--text); }
+    header { padding: 1.25rem 1.5rem; display: flex; justify-content: space-between; align-items: center; }
+    h1 { margin: 0; font-size: 1.1rem; letter-spacing: 0.04em; text-transform: uppercase; color: var(--accent); }
+    .pill { background: var(--panel); border: 1px solid #243041; border-radius: 999px; padding: 0.3rem 0.8rem; font-size: 0.85rem; color: var(--muted); }
+    .grid { display: grid; gap: 1rem; padding: 0 1.5rem 1.5rem; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+    .card { background: var(--panel); border: 1px solid #243041; border-radius: 12px; padding: 1rem; min-height: 120px; }
+    .ref { font-size: 0.78rem; color: var(--muted); word-break: break-all; }
+    .val { font-size: 1.6rem; font-weight: 600; margin: 0.25rem 0; }
+    .status { font-size: 0.8rem; }
+    .flag { display: inline-block; margin-top: 0.4rem; padding: 0.15rem 0.45rem; border-radius: 6px; font-size: 0.75rem; }
+    .flag.info { background: #22314a; color: #9ec5ff; }
+    .flag.warn { background: #3a2c12; color: var(--warn); }
+    .flag.alarm { background: #3a1212; color: var(--alarm); }
+    canvas { width: 100%; height: 42px; display: block; margin-top: 0.5rem; }
+    #rules { padding: 0 1.5rem 2rem; }
+    #rules h2 { font-size: 0.95rem; color: var(--muted); }
+    table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+    td, th { border-bottom: 1px solid #243041; padding: 0.35rem 0.25rem; text-align: left; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>edge-microdot</h1>
+    <span class="pill" id="meta">connecting…</span>
+  </header>
+  <section class="grid" id="cards"></section>
+  <section id="rules">
+    <h2>Fault rules</h2>
+    <table>
+      <thead><tr><th>Rule</th><th>Ref</th><th>Severity</th><th>Message</th></tr></thead>
+      <tbody id="faultRows"></tbody>
+    </table>
+  </section>
+  <script>
+    const cards = document.getElementById('cards');
+    const meta = document.getElementById('meta');
+    const faultRows = document.getElementById('faultRows');
+    const series = new Map();
+
+    function drawSparkline(canvas, values) {
+      const ctx = canvas.getContext('2d');
+      const w = canvas.width = canvas.clientWidth * devicePixelRatio;
+      const h = canvas.height = 42 * devicePixelRatio;
+      ctx.clearRect(0, 0, w, h);
+      if (values.length < 2) return;
+      const min = Math.min(...values), max = Math.max(...values);
+      const span = (max - min) || 1;
+      ctx.strokeStyle = '#3dd6c3';
+      ctx.lineWidth = 2 * devicePixelRatio;
+      ctx.beginPath();
+      values.forEach((v, i) => {
+        const x = (i / (values.length - 1)) * w;
+        const y = h - ((v - min) / span) * (h - 8) - 4;
+        i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+      });
+      ctx.stroke();
+    }
+
+    function upsertSample(sample, faultsByRef) {
+      const ref = sample.ref;
+      if (!ref) return;
+      const vals = series.get(ref) || [];
+      const num = typeof sample.value === 'number' ? sample.value : parseFloat(sample.value);
+      if (!Number.isNaN(num)) {
+        vals.push(num);
+        if (vals.length > 24) vals.shift();
+        series.set(ref, vals);
+      }
+      let card = document.querySelector(`[data-ref="${CSS.escape(ref)}"]`);
+      if (!card) {
+        card = document.createElement('article');
+        card.className = 'card';
+        card.dataset.ref = ref;
+        card.innerHTML = '<div class="ref"></div><div class="val"></div><div class="status"></div><canvas></canvas><div class="flags"></div>';
+        cards.appendChild(card);
+      }
+      card.querySelector('.ref').textContent = ref;
+      card.querySelector('.val').textContent = `${sample.value ?? '—'} ${sample.units || ''}`.trim();
+      card.querySelector('.status').textContent = `${sample.status} · ${sample.timestamp_utc || ''}`;
+      drawSparkline(card.querySelector('canvas'), vals);
+      const flags = card.querySelector('.flags');
+      flags.innerHTML = '';
+      (faultsByRef.get(ref) || []).forEach(f => {
+        const span = document.createElement('span');
+        span.className = `flag ${f.severity}`;
+        span.textContent = f.rule_name;
+        flags.appendChild(span);
+      });
+    }
+
+    async function refreshRules() {
+      const res = await fetch('/rules');
+      const body = await res.json();
+      faultRows.innerHTML = '';
+      const faultsByRef = new Map();
+      (body.faults || []).forEach(f => {
+        if (!faultsByRef.has(f.ref)) faultsByRef.set(f.ref, []);
+        faultsByRef.get(f.ref).push(f);
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${f.rule_name}</td><td>${f.ref}</td><td>${f.severity}</td><td>${f.message}</td>`;
+        faultRows.appendChild(tr);
+      });
+      document.querySelectorAll('.card[data-ref]').forEach(card => {
+        const ref = card.dataset.ref;
+        const flags = card.querySelector('.flags');
+        flags.innerHTML = '';
+        (faultsByRef.get(ref) || []).forEach(f => {
+          const span = document.createElement('span');
+          span.className = `flag ${f.severity}`;
+          span.textContent = f.rule_name;
+          flags.appendChild(span);
+        });
+      });
+      return faultsByRef;
+    }
+
+    async function bootstrap() {
+      const health = await fetch('/health').then(r => r.json());
+      meta.textContent = `${health.source} · ${health.latest_count} points · ws`;
+      const latest = await fetch('/latest').then(r => r.json());
+      const faultsByRef = await refreshRules();
+      (latest.samples || []).forEach(s => upsertSample(s, faultsByRef));
+      const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+      const ws = new WebSocket(`${proto}://${location.host}/live`);
+      ws.onmessage = (ev) => {
+        const msg = JSON.parse(ev.data);
+        const batch = msg.samples || [];
+        refreshRules().then(map => batch.forEach(s => upsertSample(s, map)));
+      };
+      setInterval(refreshRules, 15000);
+    }
+    bootstrap();
+  </script>
+</body>
+</html>

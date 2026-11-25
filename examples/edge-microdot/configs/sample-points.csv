@@ -1,0 +1,3 @@
+device,object,property,units,label
+10001,"analog-input,1",present-value,C,Zone temp 1
+10001,"analog-input,2",present-value,C,Zone temp 2

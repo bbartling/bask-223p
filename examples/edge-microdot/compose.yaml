@@ -1,0 +1,62 @@
+services:
+  edge-bacnet:
+    profiles: ["bacnet"]
+    build:
+      context: ../..
+      dockerfile: examples/edge-microdot/Dockerfile
+    network_mode: host
+    environment:
+      EDGE_DRIVER: bacnet
+      EDGE_POLL_INTERVAL: "${EDGE_POLL_INTERVAL:-15}"
+      EDGE_FLUSH_INTERVAL: "${EDGE_FLUSH_INTERVAL:-30}"
+      EDGE_DB_PATH: /app/examples/edge-microdot/var/edge_history.duckdb
+      EDGE_DB_MAX_MB: "${EDGE_DB_MAX_MB:-100}"
+      EDGE_ENABLE_SPARQL: "${EDGE_ENABLE_SPARQL:-0}"
+    volumes:
+      - ./var:/app/examples/edge-microdot/var
+    command:
+      - "--driver"
+      - "bacnet"
+      - "--points"
+      - "/app/examples/bench-scan.ttl"
+      - "--local-address"
+      - "${BACNET_LOCAL_ADDRESS:-0.0.0.0}"
+      - "--max-props"
+      - "25"
+      - "--host"
+      - "0.0.0.0"
+      - "--port"
+      - "8080"
+
+  edge-niagara:
+    profiles: ["niagara"]
+    build:
+      context: ../..
+      dockerfile: examples/edge-microdot/Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      EDGE_DRIVER: niagara
+      NIAGARA_URL: ${NIAGARA_URL:?set NIAGARA_URL}
+      NIAGARA_USER: ${NIAGARA_USER:?set NIAGARA_USER}
+      NIAGARA_PASS: ${NIAGARA_PASS:?set NIAGARA_PASS}
+      NIAGARA_INSECURE: "${NIAGARA_INSECURE:-0}"
+      NIAGARA_WS_AUTH_HEADER: "${NIAGARA_WS_AUTH_HEADER:-0}"
+      EDGE_POLL_INTERVAL: "${EDGE_POLL_INTERVAL:-15}"
+      EDGE_DB_PATH: /app/examples/edge-microdot/var/edge_history.duckdb
+      EDGE_ENABLE_SPARQL: "${EDGE_ENABLE_SPARQL:-1}"
+    volumes:
+      - ./var:/app/examples/edge-microdot/var
+    command:
+      - "--driver"
+      - "niagara"
+      - "--station"
+      - "${NIAGARA_URL}"
+      - "--points"
+      - "/app/examples/illustrative-ahu-refs.ttl"
+      - "--base"
+      - "${BASK_BASE_ORD:-slot:/Drivers/BacnetNetwork}"
+      - "--host"
+      - "0.0.0.0"
+      - "--port"
+      - "8080"
