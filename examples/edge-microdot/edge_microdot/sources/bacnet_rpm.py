@@ -239,12 +239,17 @@ class Bacpypes3Transport:
 
         obj_id = ObjectIdentifier(object_identifier)
         try:
-            return await self.app.read_property(
-                Address(address),
-                obj_id,
-                property_identifier,
-                array_index=array_index,
+            return await asyncio.wait_for(
+                self.app.read_property(
+                    Address(address),
+                    obj_id,
+                    property_identifier,
+                    array_index=array_index,
+                ),
+                timeout=8.0,
             )
+        except asyncio.TimeoutError as exc:
+            raise BacnetTransportError("timeout", reason="timeout") from exc
         except (AbortPDU, RejectPDU, ErrorPDU) as exc:
             raise BacnetTransportError(str(exc), reason=str(getattr(exc, "apduAbortRejectReason", exc))) from exc
 
@@ -263,7 +268,12 @@ class Bacpypes3Transport:
             spec.append(ObjectIdentifier(obj_id))
             spec.append([prop_id])
         try:
-            resp = await self.app.read_property_multiple(Address(address), spec)
+            resp = await asyncio.wait_for(
+                self.app.read_property_multiple(Address(address), spec),
+                timeout=8.0,
+            )
+        except asyncio.TimeoutError as exc:
+            raise BacnetTransportError("timeout", reason="timeout") from exc
         except (AbortPDU, RejectPDU, ErrorPDU) as exc:
             raise BacnetTransportError(str(exc), reason=str(getattr(exc, "apduAbortRejectReason", exc))) from exc
 
@@ -283,10 +293,16 @@ class BacnetRpmSource:
         transport: BacnetTransport | None = None,
         local_address: str = "0.0.0.0",
         max_props: int = 25,
+        discover_instances: Sequence[int] = (),
+        site: str = "demo-site",
+        io_timeout_s: float = 8.0,
     ) -> None:
-        self.targets = list(targets)
+        self.targets = targets if isinstance(targets, list) else list(targets)
         self.transport: BacnetTransport = transport or Bacpypes3Transport(local_address=local_address)
         self.max_props = max(1, int(max_props))
+        self.discover_instances = [int(x) for x in discover_instances]
+        self.site = site
+        self.io_timeout_s = float(io_timeout_s)
         self.device_cache: dict[int, DeviceInfo] = {}
         for t in self.targets:
             inst = t.device_instance
@@ -381,6 +397,8 @@ class BacnetRpmSource:
             return left + right
 
     async def poll_once_async(self) -> list[PointSample]:
+        if not self.targets and self.discover_instances:
+            await self.discover_targets(self.discover_instances, site=self.site)
         ts = utc_now_iso()
         by_device: dict[int, list[PointTarget]] = {}
         samples: list[PointSample] = []
@@ -519,5 +537,6 @@ class BacnetRpmSource:
                         label=obj_id,
                     )
                 )
-        self.targets = targets
-        return targets
+        self.targets.clear()
+        self.targets.extend(targets)
+        return list(self.targets)

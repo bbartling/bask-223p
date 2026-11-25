@@ -79,7 +79,7 @@ def create_app(
 ) -> Microdot:
     app = Microdot()
     hub = LiveHub()
-    targets_list = list(targets)
+    targets_list = targets if isinstance(targets, list) else list(targets)
     poll_lock = asyncio.Lock()
     static_dir = Path(__file__).resolve().parent / "static"
 

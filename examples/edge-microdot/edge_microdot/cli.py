@@ -113,21 +113,21 @@ def build_runtime(argv: Sequence[str] | None = None) -> tuple:
         source = FakePollSource(targets)
     elif driver == "bacnet":
         address = resolve_bacnet_local_address(cli=args.local_address, config=cfg.local_address)
+        instances = _device_instances(args)
+        if not targets and not instances:
+            raise SystemExit(
+                "bacnet driver requires --points or EDGE_BACNET_DEVICES / --devices "
+                "(comma-separated device instances to discover via Who-Is)"
+            )
+        # Discover on the poll loop, not a throwaway asyncio.run() here.
+        # BACpypes3 Application is loop-bound; a second loop would hang Who-Is/RPM.
         source = BacnetRpmSource(
             targets,
             local_address=address,
             max_props=args.max_props or cfg.max_props,
+            discover_instances=instances if not targets else (),
+            site=site,
         )
-        if not targets:
-            instances = _device_instances(args)
-            if not instances:
-                raise SystemExit(
-                    "bacnet driver requires --points or EDGE_BACNET_DEVICES / --devices "
-                    "(comma-separated device instances to discover via Who-Is)"
-                )
-            targets = asyncio.run(source.discover_targets(instances, site=site))
-            if not targets:
-                raise SystemExit(f"Who-Is discovery found no pollable objects for devices {instances}")
     elif driver == "niagara":
         source = BaskStreamSource(
             station=args.station,
@@ -177,10 +177,12 @@ def build_runtime(argv: Sequence[str] | None = None) -> tuple:
 
 def main(argv: Sequence[str] | None = None) -> int:
     app, source, hot, history, host, port, args = build_runtime(argv)
+    source_closed = False
     try:
         if args.once:
 
             async def _once() -> None:
+                nonlocal source_closed
                 if hasattr(source, "poll_once_async"):
                     samples = await source.poll_once_async()
                 else:
@@ -190,6 +192,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                 history.flush()
                 for s in samples:
                     print(s.to_dict())
+                if hasattr(source, "close"):
+                    await source.close()
+                    source_closed = True
 
             asyncio.run(_once())
             return 0
@@ -199,8 +204,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     finally:
         history.close()
         hot.close()
-        if hasattr(source, "close"):
-            asyncio.run(source.close())
+        if hasattr(source, "close") and not source_closed:
+            try:
+                asyncio.run(source.close())
+            except Exception:
+                pass
 
 
 if __name__ == "__main__":
