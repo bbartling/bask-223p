@@ -143,11 +143,11 @@ def create_app(
     @app.route("/")
     async def index(request):
         index_path = static_dir / "index.html"
-        return await send_file(str(index_path))
+        return send_file(str(index_path))
 
     @app.route("/static/<path:path>")
     async def static_files(request, path):
-        return await send_file(str(static_dir / path))
+        return send_file(str(static_dir / path))
 
     @app.get("/health")
     async def health(request):
