@@ -9,17 +9,17 @@ import yaml
 from rdflib import Graph, URIRef
 from rdflib.namespace import RDF, RDFS
 
-from bask_223p.bacnet.reconcile import (
-    _scan_units_from_ttl,
-    _sides_from_ref_graph,
-    _sides_from_snapshot,
-)
+from bask_223p.bacnet.export223 import build_223p_graph, snapshot_from_points
+from bask_223p.bacnet.reconcile import _sides_from_ref_graph, _sides_from_snapshot
 from bask_223p.bacnet.refs import (
     BACNET,
     BRICK_REF,
+    NIAGARA,
     S223,
     VOCAB,
+    BacnetPoint,
     load_points,
+    load_points_scan,
     normalize_object_type,
     normalize_property_identifier,
 )
@@ -42,11 +42,26 @@ class LoadedConfig:
     csv_path: str | None = None
     targets: list[PointTarget] = field(default_factory=list)
     graph: Graph | None = None
+    niagara_graph: Graph | None = None
+    scan_graph: Graph | None = None
+
+    def sidecar_graphs(self) -> dict[str, Graph]:
+        out: dict[str, Graph] = {}
+        if self.niagara_graph is not None and len(self.niagara_graph) > 0:
+            out["urn:bask-223p:niagara"] = self.niagara_graph
+        if self.scan_graph is not None and len(self.scan_graph) > 0:
+            out["urn:bask-223p:bacnet-scan"] = self.scan_graph
+        return out
 
 
-def _targets_from_ref_graph(graph: Graph, site: str) -> list[PointTarget]:
+def _targets_from_ref_graph(
+    graph: Graph,
+    site: str,
+    *,
+    niagara_graph: Graph | None = None,
+) -> list[PointTarget]:
     """Load PointTarget objects from a 223P/Brick external-reference TTL graph."""
-    sides = _sides_from_ref_graph(graph)
+    sides = _sides_from_ref_graph(graph, niagara_graph=niagara_graph)
     targets: list[PointTarget] = []
     ref_by_key: dict[tuple[int, str, int], tuple[str, str, str]] = {}
     for ref in set(graph.subjects(RDF.type, S223.BACnetExternalReference)) | set(
@@ -102,6 +117,12 @@ def _targets_from_ref_graph(graph: Graph, site: str) -> list[PointTarget]:
         if holder_uri:
             h_ref = URIRef(holder_uri)
             label = str(graph.value(h_ref, VOCAB.object_name) or graph.value(h_ref, RDFS.label) or "")
+            if not label and niagara_graph is not None:
+                label = str(
+                    niagara_graph.value(h_ref, NIAGARA.pointName)
+                    or niagara_graph.value(h_ref, NIAGARA.displayName)
+                    or ""
+                )
             u = graph.value(h_ref, QUDT_HAS_UNIT)
             if u is not None:
                 unit = str(u).rsplit("/", 1)[-1]
@@ -120,15 +141,14 @@ def _targets_from_ref_graph(graph: Graph, site: str) -> list[PointTarget]:
     return targets
 
 
-def _targets_from_scan_ttl(path: Path, graph: Graph, site: str) -> list[PointTarget]:
-    pts = load_points(path)
-    units_map = _scan_units_from_ttl(graph)
+def _targets_from_bacnet_points(pts: list[BacnetPoint], site: str) -> list[PointTarget]:
     targets: list[PointTarget] = []
     for p in pts:
         if p.object_type in ("device", "network-port"):
             continue
-        raw_u = units_map.get(p.object_iri, "")
-        unit = raw_u.rsplit("EngineeringUnits.", 1)[-1].rsplit("#", 1)[-1] if raw_u else ""
+        unit = p.qudt_unit or (
+            p.unit_raw.rsplit("EngineeringUnits.", 1)[-1].rsplit("#", 1)[-1] if p.unit_raw else ""
+        )
         targets.append(
             PointTarget(
                 site=site,
@@ -174,23 +194,7 @@ def _targets_from_csv(path: Path, site: str) -> list[PointTarget]:
             )
         return targets
 
-    pts = load_points(path)
-    out: list[PointTarget] = []
-    for p in pts:
-        if p.object_type in ("device", "network-port"):
-            continue
-        out.append(
-            PointTarget(
-                site=site,
-                device=str(p.device_instance),
-                object_id=p.object_id,
-                property_id=p.property_identifier or "present-value",
-                label=p.object_name or p.description,
-                point_uri=p.object_iri,
-                ref=p.bacnet_uri,
-            )
-        )
-    return out
+    return _targets_from_bacnet_points(load_points(path), site)
 
 
 def _targets_from_yaml(path: Path, site: str) -> LoadedConfig:
@@ -219,6 +223,8 @@ def _targets_from_yaml(path: Path, site: str) -> LoadedConfig:
         sub = load_config(ref_path, site=eff_site)
         cfg.targets.extend(sub.targets)
         cfg.graph = sub.graph
+        cfg.niagara_graph = sub.niagara_graph
+        cfg.scan_graph = sub.scan_graph
     for item in raw.get("points") or []:
         if not isinstance(item, dict):
             continue
@@ -241,7 +247,7 @@ def _targets_from_yaml(path: Path, site: str) -> LoadedConfig:
     return cfg
 
 
-def load_config(path: str | Path, *, site: str = "demo-site") -> LoadedConfig:
+def load_config(path: str | Path, *, site: str = "demo-site", base_iri: str = "https://example.org/site") -> LoadedConfig:
     p = Path(path)
     if not p.is_file():
         raise FileNotFoundError(p)
@@ -249,11 +255,34 @@ def load_config(path: str | Path, *, site: str = "demo-site") -> LoadedConfig:
     if suffix in {".yaml", ".yml"}:
         return _targets_from_yaml(p, site)
     if suffix in {".ttl", ".turtle"}:
-        graph = Graph().parse(p, format="turtle")
-        targets = _targets_from_ref_graph(graph, site)
-        if not targets:
-            targets = _targets_from_scan_ttl(p, graph, site)
-        return LoadedConfig(site=site, targets=targets, graph=graph)
+        raw_graph = Graph().parse(p, format="turtle")
+        niagara_sidecar = p.with_suffix(".niagara.ttl")
+        niagara_graph = Graph().parse(niagara_sidecar, format="turtle") if niagara_sidecar.is_file() else None
+        scan_sidecar = p.with_suffix(".scan-sidecar.ttl")
+        scan_graph = Graph().parse(scan_sidecar, format="turtle") if scan_sidecar.is_file() else None
+
+        targets = _targets_from_ref_graph(raw_graph, site, niagara_graph=niagara_graph)
+        if targets:
+            return LoadedConfig(
+                site=site,
+                targets=targets,
+                graph=raw_graph,
+                niagara_graph=niagara_graph,
+                scan_graph=scan_graph,
+            )
+
+        # BACpypes3 scan TTL: parse once -> load_points_scan -> snapshot_from_points -> single 223P emitter;
+        # keep the raw scan TTL as a sidecar graph rather than mixing it into the 223P model.
+        pts = load_points_scan(p, graph=raw_graph)
+        snap = snapshot_from_points(pts, station_label=p.name)
+        model_graph, _, _ = build_223p_graph(snap, base_iri)
+        targets = _targets_from_bacnet_points(pts, site)
+        return LoadedConfig(
+            site=site,
+            targets=targets,
+            graph=model_graph,
+            scan_graph=raw_graph,
+        )
     if suffix == ".json":
         sides = _sides_from_snapshot(p)
         targets = [

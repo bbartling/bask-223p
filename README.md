@@ -102,12 +102,22 @@ What lands in the TTL, per bound point:
 ```
 
 The model also declares `owl:imports <http://data.ashrae.org/standard223/1.0/model/all>` so an
-ontology environment can resolve 223P and its dependencies. Niagara display names stay labels;
-they are **not** asserted as `bacnet:object-name`. Points with no BACnet proxy stay in the graph
-without a reference and are listed as unbound. Quantifiable properties get a QUDT unit and, when
-the unit is known, a QuantityKind (from the unit, not from the point name). Boolean points use
-`s223:EnumerationKind-Binary`; other enumerations get a local `EnumerationKind` labelled from the
-facet range.
+ontology environment can resolve 223P and its dependencies. Both Niagara (`--snapshot`/`--station`)
+and BACpypes3 scan (`--input`) exports flow through one shared intermediate `BacnetPoint` model and
+emitter, producing identical 223P TTL for the same `(device, type, instance)`. Niagara-only metadata
+(slot path, display name, proxy extension type, facets) is written to a separate `.niagara.ttl`
+annotation graph (`niagara:` namespace) outside the 223P shapes so SHACL ignores it and Niagara
+display names never collide with `bacnet:object-name`. When `--input` is a BACpypes3 scan TTL, the
+raw scan graph is preserved as a `.scan-sidecar.ttl` sidecar rather than mixed into the 223P graph.
+
+Niagara points without a BACnet address (e.g. `NullProxyExt` folders) receive a deterministic
+`niagara://` URI and `niagara:NiagaraExternalReference` (a concrete subclass of
+`s223:ExternalReference`) flagged with `niagara:noBacnetSource true`, surfaced as a `NoBacnetSource`
+warning rather than a broken reference. Quantifiable properties get a QUDT unit and QuantityKind
+from the unit (never guessed from the point name); numeric points without a resolved unit/QuantityKind
+omit `s223:QuantifiableProperty` so they do not fail 223P's `qudt:hasQuantityKind` SHACL constraint.
+Boolean points use `s223:EnumerationKind-Binary`; other enumerations get a local `EnumerationKind`
+labelled from the facet range.
 
 ## 2. Reconcile with a BACnet scan (`reconcile`, alias `match`)
 
@@ -198,7 +208,8 @@ Exit codes: 0 ok, 1 non-conformance / strict mismatch, 2 bad input or setup erro
 |---|---|
 | `bask_223p.bacnet.baskstream` | read-only baskStream client and discovery |
 | `bask_223p.bacnet.export223` | snapshot → 223P + Brick TTL, built-in ref checks, official SHACL |
-| `bask_223p.bacnet.refs` | shared BACnet reference/URI builders, CSV/scan loaders |
+| `bask_223p.bacnet.refs` | shared `BacnetPoint` model, `bacnet://` / `niagara://` builders, CSV/scan loaders |
+| `bask_223p.bacnet.units` | shared cached Niagara & BACnet unit -> QUDT / QuantityKind resolver |
 | `bask_223p.bacnet.reconcile` | Niagara ↔ scan join and merged graph |
 | `bask_223p.bacnet.haystack` | read-only nHaystack check |
 | `bask_223p.audit`, `.model`, `.validate` | secondary coverage, site-graph and SHACL tools |

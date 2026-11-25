@@ -27,6 +27,7 @@ from urllib.parse import quote, urlparse
 
 from .haystack import load_env_credentials
 from .refs import normalize_object_type, normalize_property_identifier
+from .units import QUDT_UNIT_MAP, map_qudt_unit
 
 READ_ONLY_OPS = frozenset({
     "ping",
@@ -51,45 +52,6 @@ READ_ONLY_OPS = frozenset({
 })
 
 _BACNET_OBJ_RE = re.compile(r"^([A-Za-z0-9_-]+)[: ,]+([0-9]+)$")
-
-# Conservative Niagara unit display / facet token -> QUDT unit local name.
-QUDT_UNIT_MAP: dict[str, str] = {
-    "°f": "DEG_F",
-    "degf": "DEG_F",
-    "fahrenheit": "DEG_F",
-    "degreesfahrenheit": "DEG_F",
-    "°c": "DEG_C",
-    "degc": "DEG_C",
-    "celsius": "DEG_C",
-    "degreescelsius": "DEG_C",
-    "%": "PERCENT",
-    "percent": "PERCENT",
-    "%rh": "PERCENT_RH",
-    "percentrelativehumidity": "PERCENT_RH",
-    "inh2o": "IN_H2O",
-    "inh₂o": "IN_H2O",
-    "inchesofwater": "IN_H2O",
-    "cfm": "FT3-PER-MIN",
-    "cubicfeetperminute": "FT3-PER-MIN",
-    "psi": "PSI",
-    "poundsforcepersquareinch": "PSI",
-    "pa": "PA",
-    "pascals": "PA",
-    "kpa": "KiloPA",
-    "kw": "KiloW",
-    "kilowatts": "KiloW",
-    "kwh": "KiloW-HR",
-    "kilowatthours": "KiloW-HR",
-    "w": "W",
-    "watts": "W",
-    "hz": "HZ",
-    "hertz": "HZ",
-    "gpm": "GAL_US-PER-MIN",
-    "gallonsperminute": "GAL_US-PER-MIN",
-    "ppm": "PPM",
-    "partspermillion": "PPM",
-}
-
 
 class BaskStreamError(RuntimeError):
     """Raised on Niagara SCRAM login, transport, or protocol errors."""
@@ -155,27 +117,6 @@ def parse_facets_string(encoded: str | None) -> dict[str, Any]:
         else:
             out[k] = v
     return out
-
-
-def map_qudt_unit(unit_text: str | None) -> str | None:
-    """Map a Niagara unit (symbol, name, or full BUnit encoding) to a QUDT unit local name.
-
-    Accepts ``°F``, ``fahrenheit``, or the encoded form ``fahrenheit;°F;(K)*1.8+-459.67``
-    that a ``describe_component`` facets slot carries. Unknown units return ``None``
-    (never guessed).
-    """
-    raw = (unit_text or "").strip()
-    if raw.startswith("u:"):
-        raw = raw[2:]
-    if not raw or raw.lower() in {"null", "none", "no-units", "nounits"}:
-        return None
-    for piece in [raw] + [p for p in raw.split(";")[:2] if p.strip()]:
-        piece = piece.strip()
-        key = re.sub(r"[\s_\-]+", "", piece.casefold())
-        hit = QUDT_UNIT_MAP.get(key) or QUDT_UNIT_MAP.get(piece.casefold())
-        if hit:
-            return hit
-    return None
 
 
 def coerce_facets(value: Any) -> dict[str, Any]:
@@ -681,6 +622,10 @@ def _extract_point_proxy_bacnet(
             comp = client.describe_component(target)
         except BaskStreamError:
             continue
+        res_node = comp.get("result") if isinstance(comp.get("result"), dict) else {}
+        ext_type = str(res_node.get("typeSpec") or comp.get("typeSpec") or "").strip()
+        if target.endswith("/proxyExt") and ext_type and "proxy_ext_type" not in info:
+            info["proxy_ext_type"] = ext_type
         slots = _slots_map(comp)
         if "objectId" in slots and "object_id" not in info:
             parsed = parse_bacnet_object_id(_slot_encoded(slots["objectId"]))
@@ -1007,6 +952,8 @@ def discover_station_snapshot(
                     "haystackTags": sorted(set(hs_tags)),
                     "tags": tags_raw,
                 }
+                if proxy.get("proxy_ext_type"):
+                    pt_entry["proxyExtType"] = proxy["proxy_ext_type"]
                 if "object_type" in proxy and "object_instance" in proxy:
                     pt_entry["bacnet"] = {
                         "object_type": proxy["object_type"],

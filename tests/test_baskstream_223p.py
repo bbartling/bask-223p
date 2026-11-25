@@ -82,14 +82,24 @@ def test_export_223p_from_snapshot_with_catalog_and_validation(tmp_path):
     # Confirm 223P §11.18.1 BACnetExternalReference + Clause Q.8 URI + priority-for-writing
     refs = list(g.subjects(RDF.type, S223.BACnetExternalReference))
     assert len(refs) == 6
-    from bask_223p.bacnet.refs import VOCAB
-    sat_sp_pt = next(p for p in g.subjects(VOCAB.object_name, None) if str(g.value(p, VOCAB.object_name)) == "SAT_SP")
-    sat_sp_ref = g.value(sat_sp_pt, S223.hasExternalReference)
+    from bask_223p.bacnet.refs import NIAGARA
+    sat_sp_ref = next(
+        r for r in refs if str(g.value(r, BRICK_REF.BACnetURI)) == "bacnet://10001/analog-value,1"
+    )
     # Niagara point names are not BACnet object names: never asserted as bacnet:object-name.
     assert g.value(sat_sp_ref, BACNET["object-name"]) is None
     assert str(g.value(sat_sp_ref, BRICK_REF.BACnetURI)) == "bacnet://10001/analog-value,1"
     assert str(g.value(sat_sp_ref, BACNET["device-identifier"])) == "device,10001"
     assert int(str(g.value(sat_sp_ref, BACNET["priority-for-writing"]))) == 16
+    # Niagara-only metadata lives in the separate .niagara.ttl annotation graph, not in 223P TTL.
+    assert (None, NIAGARA.slotPath, None) not in g
+    assert (None, NIAGARA.facets, None) not in g
+    ng_path = out_ttl.with_suffix(".niagara.ttl")
+    assert ng_path.is_file()
+    ng = Graph().parse(ng_path, format="turtle")
+    assert any(str(o) == "SAT_SP" for o in ng.objects(None, NIAGARA.pointName))
+    assert (None, NIAGARA.slotPath, None) in ng
+    assert (None, NIAGARA.facets, None) in ng
 
     # Round-trip bindings
     rows = bindings_from_graph(g)

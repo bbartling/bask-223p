@@ -14,10 +14,18 @@ from .sparql_guard import validate_read_only_sparql
 class RdfKnowledgeBase:
     """Pairs rdflib compatibility (Turtle/OntoEnv/Shifty/pyshacl) with pyoxigraph SPARQL speed."""
 
-    def __init__(self, graph: Graph | None = None) -> None:
+    def __init__(
+        self,
+        graph: Graph | None = None,
+        *,
+        sidecar_graphs: dict[str, Graph] | None = None,
+    ) -> None:
         self.graph: Graph = graph if graph is not None else Graph()
+        self.sidecar_graphs: dict[str, Graph] = {
+            k: v for k, v in (sidecar_graphs or {}).items() if v is not None and len(v) > 0
+        }
         self.store: pyoxigraph.Store = pyoxigraph.Store()
-        if len(self.graph) > 0:
+        if len(self.graph) > 0 or self.sidecar_graphs:
             self._sync_oxigraph()
 
     def _sync_oxigraph(self) -> None:
@@ -25,6 +33,14 @@ class RdfKnowledgeBase:
         ttl_bytes = self.graph.serialize(format="turtle").encode("utf-8")
         if ttl_bytes.strip():
             self.store.load(ttl_bytes, format=pyoxigraph.RdfFormat.TURTLE)
+        for named_iri, sidecar in self.sidecar_graphs.items():
+            s_bytes = sidecar.serialize(format="turtle").encode("utf-8")
+            if s_bytes.strip():
+                self.store.load(
+                    s_bytes,
+                    format=pyoxigraph.RdfFormat.TURTLE,
+                    to_graph=pyoxigraph.NamedNode(named_iri),
+                )
 
     @property
     def triple_count(self) -> int:

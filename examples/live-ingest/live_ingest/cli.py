@@ -114,6 +114,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 sinks=[s for s in sinks if s is not duckdb_sink],
                 duckdb_sink=duckdb_sink,
                 graph=cfg.graph,
+                sidecar_graphs=cfg.sidecar_graphs(),
                 poll_interval_s=args.interval if args.interval > 0 else 0.0,
                 site=site,
             )

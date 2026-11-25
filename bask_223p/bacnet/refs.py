@@ -22,17 +22,20 @@ import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import quote
 
 from rdflib import Graph, Literal, Namespace, URIRef
 from rdflib.namespace import RDF, RDFS, XSD
 
 from ..model.graph import valid_external_iri
+from .units import map_quantity_kind_name, resolve_unit_and_quantity_kind
 
 BACNET = Namespace("http://data.ashrae.org/bacnet/2020#")
 BACNET_2024 = Namespace("http://data.ashrae.org/bacnet/2024#")
 BRICK_REF = Namespace("https://brickschema.org/schema/Brick/ref#")
 S223 = Namespace("http://data.ashrae.org/standard223#")
 VOCAB = Namespace("https://example.org/bask-223p/v2#")
+NIAGARA = Namespace("https://example.org/bask-223p/niagara#")
 
 # 223P SHACL: object-identifier and device-identifier are type,instance with instance >= 1.
 IDENT_PATTERN = re.compile(r"^[A-Za-z0-9-]+,[1-9][0-9]*$")
@@ -51,6 +54,7 @@ _COL_ALIASES = {
     "haystack_tags": ("haystack_tags", "haystack", "tags"),
     "property_array_index": ("property_array_index", "property-array-index", "array_index"),
     "priority_for_writing": ("priority_for_writing", "priority-for-writing", "write_priority", "priority"),
+    "units": ("units", "unit", "engineering_units"),
 }
 
 # Common BACnet object-type spellings -> hyphenated CSML / BACpypes3 form.
@@ -125,6 +129,25 @@ def bacnet_device_uri(device_instance: int) -> str:
     return f"bacnet://{device_instance}"
 
 
+def niagara_object_uri(ord_path: str, point_name: str = "") -> str:
+    """Deterministic ``niagara://`` URI for a Niagara-only point without a BACnet address."""
+    raw = (ord_path or "").strip()
+    if raw.startswith("slot:/"):
+        rel = raw[len("slot:/"):].lstrip("/")
+        return f"niagara://slot/{quote(rel, safe='/$-_.+!*(),~')}"
+    if raw:
+        return f"niagara://ord/{quote(raw, safe='/$-_.+!*(),~')}"
+    digest = hashlib.sha256((point_name or "unbound").encode("utf-8")).hexdigest()[:16]
+    return f"niagara://point/{digest}"
+
+
+def niagara_reference_iri(base: str, ord_path: str, point_name: str = "") -> URIRef:
+    """Deterministic IRI of the external reference for a Niagara-only point (no BACnet address)."""
+    key = f"niagara-ref|{(ord_path or '').strip() or (point_name or '').strip()}"
+    digest = hashlib.sha256(key.encode("utf-8")).hexdigest()[:20]
+    return URIRef(f"{base.rstrip('/')}/niagara-ref/{digest}")
+
+
 def _fits_ident(identifier: str) -> bool:
     return bool(IDENT_PATTERN.fullmatch(identifier))
 
@@ -148,15 +171,29 @@ class BacnetPoint:
     # merged scan + Niagara graph never carries two conflicting BACnet names.
     object_name_is_bacnet: bool = True
     device_name_is_bacnet: bool = True
+    # Enriched shared intermediate fields (used by both Niagara and BACpypes3 scan paths).
+    unit_raw: str = ""
+    qudt_unit: str = ""
+    quantity_kind: str = ""
+    niagara_name: str = ""
+    niagara_device_name: str = ""
+    value_kind: str = ""
+    writable: bool | None = None
 
     def __post_init__(self) -> None:
         self.object_type = normalize_object_type(self.object_type)
         self.object_instance = int(self.object_instance)
         self.device_instance = int(self.device_instance)
         self.property_identifier = normalize_property_identifier(self.property_identifier)
+        self.niagara_name = (self.niagara_name or "").strip()
+        self.niagara_device_name = (self.niagara_device_name or "").strip()
         self.object_name = (self.object_name or "").strip()
+        if not self.object_name and self.niagara_name:
+            self.object_name = self.niagara_name
         if not self.object_name:
             raise ValueError("object name is required")
+        if not self.object_name_is_bacnet and not self.niagara_name:
+            self.niagara_name = self.object_name
         if not (0 <= self.device_instance <= MAX_INSTANCE):
             raise ValueError(f"invalid BACnet device instance: {self.device_instance}")
         if not (0 <= self.object_instance <= MAX_INSTANCE):
@@ -167,6 +204,37 @@ class BacnetPoint:
             raise ValueError(f"invalid BACnet property-array-index: {self.property_array_index}")
         if self.priority_for_writing is not None and not (1 <= self.priority_for_writing <= 16):
             raise ValueError(f"invalid BACnet priority-for-writing: {self.priority_for_writing}")
+
+        self.unit_raw = (self.unit_raw or "").strip()
+        self.qudt_unit = (self.qudt_unit or "").strip()
+        self.quantity_kind = (self.quantity_kind or "").strip()
+        if not self.qudt_unit and self.unit_raw:
+            qudt_u, qk_name = resolve_unit_and_quantity_kind(self.unit_raw)
+            self.qudt_unit = qudt_u or ""
+            if not self.quantity_kind:
+                self.quantity_kind = qk_name or ""
+        elif self.qudt_unit and not self.quantity_kind:
+            self.quantity_kind = map_quantity_kind_name(self.qudt_unit) or ""
+
+    @property
+    def effective_value_kind(self) -> str:
+        if self.value_kind:
+            return self.value_kind.casefold()
+        if "binary" in self.object_type:
+            return "boolean"
+        if "multi-state" in self.object_type:
+            return "enum"
+        return "numeric"
+
+    @property
+    def effective_writable(self) -> bool:
+        if self.writable is not None:
+            return self.writable
+        return self.object_type in {
+            "analog-output", "analog-value",
+            "binary-output", "binary-value",
+            "multi-state-output", "multi-state-value",
+        }
 
     @property
     def object_id(self) -> str:
@@ -232,6 +300,7 @@ def load_points_csv(path: Path) -> list[BacnetPoint]:
                 property_array_index=parse_optional_uint(cell("property_array_index"), "property-array-index"),
                 priority_for_writing=parse_optional_uint(cell("priority_for_writing"), "priority-for-writing", 1, 16),
                 source_row=index,
+                unit_raw=cell("units"),
             )
             key = (point.device_instance, point.object_type, point.object_instance)
             if key in seen:
@@ -255,16 +324,15 @@ def _literal_text(value) -> str:
     return text.strip()
 
 
-def load_points_scan(path: Path) -> list[BacnetPoint]:
-    """Lift object identifiers from a BACpypes3-style site-scan graph.
+def load_points_from_graph(graph: Graph, *, source_label: str = "graph") -> list[BacnetPoint]:
+    """Lift BACnet objects (including ``bacnet:units``) from a parsed site-scan graph in one pass.
 
     Accepts bacnet/2020 or bacnet/2024 predicates. Device and network-port
     objects are skipped. Address, MAC, and present-value triples are ignored.
     """
-    graph = Graph()
-    graph.parse(path, format="turtle")
     points: list[BacnetPoint] = []
     seen: set[tuple[int, str, int]] = set()
+    device_names: dict[int, str] = {}
     for namespace in (BACNET, BACNET_2024):
         for subject, ident in graph.subject_objects(namespace["object-identifier"]):
             ident_text = _literal_text(ident)
@@ -280,7 +348,10 @@ def load_points_scan(path: Path) -> list[BacnetPoint]:
             if not name:
                 continue
             desc = _first_text(graph, subject, (namespace["description"],))
-            device_name = _device_name_for(graph, device_inst)
+            unit_raw = _first_raw_text(graph, subject, (namespace["units"],))
+            if device_inst not in device_names:
+                device_names[device_inst] = _device_name_for(graph, device_inst)
+            device_name = device_names[device_inst]
             key = (device_inst, typ, inst)
             if key in seen:
                 continue
@@ -292,17 +363,38 @@ def load_points_scan(path: Path) -> list[BacnetPoint]:
                 object_name=name,
                 description=desc,
                 device_name=device_name,
+                unit_raw=unit_raw,
             ))
     points.sort(key=lambda p: (p.device_instance, p.object_type, p.object_instance))
     if not points:
-        raise ValueError(f"{path} has no BACnet objects with identifiers")
+        raise ValueError(f"{source_label} has no BACnet objects with identifiers")
     return points
+
+
+def load_points_scan(path: Path, *, graph: Graph | None = None) -> list[BacnetPoint]:
+    """Lift object identifiers and units from a BACpypes3-style site-scan graph.
+
+    Pass an already-parsed ``graph`` to avoid re-parsing the TTL file.
+    """
+    if graph is None:
+        graph = Graph()
+        graph.parse(path, format="turtle")
+    return load_points_from_graph(graph, source_label=str(path))
 
 
 def _first_text(graph: Graph, subject, predicates) -> str:
     for pred in predicates:
         for value in graph.objects(subject, pred):
             text = _literal_text(value)
+            if text:
+                return text
+    return ""
+
+
+def _first_raw_text(graph: Graph, subject, predicates) -> str:
+    for pred in predicates:
+        for value in graph.objects(subject, pred):
+            text = str(value or "").strip()
             if text:
                 return text
     return ""
@@ -337,10 +429,10 @@ def _device_name_for(graph: Graph, device_instance: int) -> str:
     return ""
 
 
-def load_points(path: Path) -> list[BacnetPoint]:
+def load_points(path: Path, *, graph: Graph | None = None) -> list[BacnetPoint]:
     suffix = path.suffix.lower()
     if suffix in {".ttl", ".turtle", ".rdf", ".nt"}:
-        return load_points_scan(path)
+        return load_points_scan(path, graph=graph)
     return load_points_csv(path)
 
 
@@ -565,7 +657,7 @@ def bindings_from_graph(graph: Graph) -> list[dict[str, str]]:
         uri = str(graph.value(ref, BRICK_REF.BACnetURI) or "")
         object_name = str(graph.value(ref, BACNET["object-name"]) or "")
         if point and not object_name:
-            object_name = str(graph.value(point, VOCAB.object_name) or graph.value(point, RDFS.label) or "")
+            object_name = str(graph.value(point, VOCAB.object_name) or graph.value(point, NIAGARA.pointName) or graph.value(point, RDFS.label) or "")
         device_name = str(graph.value(ref, BACNET["device-name"]) or "")
         if not device_name and device is not None:
             device_name = str(graph.value(device, RDFS.label) or "")

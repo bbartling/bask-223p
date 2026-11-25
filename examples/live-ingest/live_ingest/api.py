@@ -113,6 +113,7 @@ def create_app(
     sinks: Sequence[Sink] = (),
     duckdb_sink: DuckDbSink | None = None,
     graph: Graph | None = None,
+    sidecar_graphs: dict[str, Graph] | None = None,
     poll_interval_s: float = 0.0,
     site: str = "demo-site",
 ) -> FastAPI:
@@ -122,7 +123,7 @@ def create_app(
         sink_list.append(duckdb_sink)
     sink_list.extend(sinks)
     all_sinks = MultiSink(sink_list)
-    kb = RdfKnowledgeBase(graph)
+    kb = RdfKnowledgeBase(graph, sidecar_graphs=sidecar_graphs)
     ws_hub = _WsHub()
     targets_list = list(targets)
     poll_lock = asyncio.Lock()

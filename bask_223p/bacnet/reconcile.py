@@ -31,10 +31,12 @@ from typing import Any
 from rdflib import Graph, URIRef
 from rdflib.namespace import RDF, RDFS
 
-from .baskstream import load_baskstream_snapshot, map_qudt_unit, parse_bacnet_object_id
+from .baskstream import load_baskstream_snapshot, parse_bacnet_object_id
+from .units import BACNET_UNIT_QUDT, map_qudt_unit, resolve_qudt_unit
 from .refs import (
     BACNET,
     BACNET_2024,
+    NIAGARA,
     S223,
     VOCAB,
     BacnetPoint,
@@ -56,17 +58,6 @@ POINT_TYPES = frozenset({
     "characterstring-value", "accumulator", "pulse-converter", "loop",
     "binary-lighting-output", "lighting-output",
 })
-
-# BACnet EngineeringUnits names -> QUDT local names (only well-known ones).
-BACNET_UNIT_QUDT = {
-    "degrees-fahrenheit": "DEG_F", "degrees-celsius": "DEG_C", "percent": "PERCENT",
-    "percent-relative-humidity": "PERCENT_RH", "inches-of-water": "IN_H2O",
-    "cubic-feet-per-minute": "FT3-PER-MIN", "pounds-force-per-square-inch": "PSI",
-    "pascals": "PA", "kilopascals": "KiloPA", "kilowatts": "KiloW", "kilowatt-hours": "KiloW-HR",
-    "watts": "W", "hertz": "HZ", "us-gallons-per-minute": "GAL_US-PER-MIN",
-    "parts-per-million": "PPM",
-}
-
 
 @dataclass
 class Side:
@@ -91,14 +82,12 @@ def _norm_name(text: str) -> str:
 
 
 def _unit_from_bacnet(raw: str) -> str | None:
-    text = str(raw or "").rsplit("#", 1)[-1]
-    text = text.split("EngineeringUnits.", 1)[-1].strip().casefold()
-    return BACNET_UNIT_QUDT.get(text) or map_qudt_unit(text)
+    return resolve_qudt_unit(raw)
 
 
 # ---------------------------------------------------------------- loaders
 
-def _sides_from_ref_graph(graph: Graph) -> list[Side]:
+def _sides_from_ref_graph(graph: Graph, *, niagara_graph: Graph | None = None) -> list[Side]:
     """Objects from a graph that carries 223P/Brick external references (export-223p)."""
     out: list[Side] = []
     for ref in set(graph.subjects(RDF.type, S223.BACnetExternalReference)):
@@ -117,14 +106,28 @@ def _sides_from_ref_graph(graph: Graph) -> list[Side]:
         typ, inst = obj_id.split(",", 1)
         holder = graph.value(None, S223.hasExternalReference, ref)
         bacnet_name = str(graph.value(ref, BACNET["object-name"]) or "")
-        name = bacnet_name or str(
-            (holder is not None and (graph.value(holder, VOCAB.object_name) or graph.value(holder, RDFS.label))) or ""
-        )
+        name = bacnet_name
+        if not name and holder is not None:
+            name = str(graph.value(holder, VOCAB.object_name) or graph.value(holder, RDFS.label) or "")
+            if not name and niagara_graph is not None:
+                name = str(
+                    niagara_graph.value(holder, NIAGARA.pointName)
+                    or niagara_graph.value(holder, NIAGARA.displayName)
+                    or ""
+                )
         unit = None
         if holder is not None:
             u = graph.value(holder, QUDT_HAS_UNIT)
             unit = str(u).rsplit("/", 1)[-1] if u is not None else None
-        ord_value = str(graph.value(holder, VOCAB.niagaraOrd) or "") if holder is not None else ""
+        ord_value = ""
+        if holder is not None:
+            ord_value = str(graph.value(holder, VOCAB.niagaraOrd) or "")
+            if not ord_value and niagara_graph is not None:
+                ord_value = str(
+                    niagara_graph.value(holder, NIAGARA.slotPath)
+                    or niagara_graph.value(holder, VOCAB.niagaraOrd)
+                    or ""
+                )
         dev_name = str(graph.value(ref, BACNET["device-name"]) or "")
         out.append(Side(dev, normalize_object_type(typ), int(inst), name, bool(bacnet_name), unit, "", ord_value,
                         {"device_name": dev_name}))
@@ -165,24 +168,11 @@ def _scan_units_from_ttl(graph: Graph) -> dict[str, str]:
 
 def _sides_from_scan(path: Path) -> tuple[list[Side], list[BacnetPoint]]:
     points: list[BacnetPoint] = load_points(path)
-    units: dict[str, str] = {}
-    if path.suffix.lower() in {".ttl", ".turtle"}:
-        g = Graph().parse(path, format="turtle")
-        units = _scan_units_from_ttl(g)
-    elif path.suffix.lower() == ".csv":
-        with path.open(encoding="utf-8-sig", newline="") as handle:
-            for row in csv.DictReader(handle):
-                low = {k.strip().casefold(): (v or "").strip() for k, v in row.items() if k}
-                dev = low.get("deviceid") or low.get("device_instance")
-                typ = low.get("objtype") or low.get("object_type")
-                inst = low.get("objinst") or low.get("object_instance")
-                if dev and typ and inst and dev.isdigit() and inst.isdigit() and low.get("units"):
-                    units[bacnet_object_uri(int(dev), typ, int(inst))] = low["units"]
     out = []
     for p in points:
-        raw = units.get(p.object_iri, "")
+        raw = p.unit_raw
         out.append(Side(p.device_instance, p.object_type, p.object_instance, p.object_name, True,
-                        _unit_from_bacnet(raw) if raw else None, raw.rsplit("EngineeringUnits.", 1)[-1],
+                        p.qudt_unit or None, raw.rsplit("EngineeringUnits.", 1)[-1] if raw else "",
                         "", {"description": p.description, "device_name": p.device_name}))
     return out, points
 
@@ -191,7 +181,9 @@ def load_niagara_side(path: Path) -> tuple[list[Side], Graph | None]:
     if path.suffix.lower() == ".json":
         return _sides_from_snapshot(path), None
     graph = Graph().parse(path, format="turtle")
-    return _sides_from_ref_graph(graph), graph
+    sidecar = path.with_suffix(".niagara.ttl")
+    niagara_graph = Graph().parse(sidecar, format="turtle") if sidecar.is_file() else None
+    return _sides_from_ref_graph(graph, niagara_graph=niagara_graph), graph
 
 
 # ---------------------------------------------------------------- reconcile
