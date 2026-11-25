@@ -5,6 +5,7 @@ services:
       context: ../..
       dockerfile: examples/edge-microdot/Dockerfile
     network_mode: host
+    restart: unless-stopped
     environment:
       EDGE_DRIVER: bacnet
       EDGE_POLL_INTERVAL: "${EDGE_POLL_INTERVAL:-15}"
@@ -12,15 +13,17 @@ services:
       EDGE_DB_PATH: /app/examples/edge-microdot/var/edge_history.duckdb
       EDGE_DB_MAX_MB: "${EDGE_DB_MAX_MB:-100}"
       EDGE_ENABLE_SPARQL: "${EDGE_ENABLE_SPARQL:-0}"
+      EDGE_BACNET_ADDRESS: "${EDGE_BACNET_ADDRESS:?set EDGE_BACNET_ADDRESS to the host LAN CIDR, e.g. 192.168.204.59/24}"
+      EDGE_BACNET_DEVICES: "${EDGE_BACNET_DEVICES:-54545,5007}"
     volumes:
       - ./var:/app/examples/edge-microdot/var
     command:
       - "--driver"
       - "bacnet"
-      - "--points"
-      - "/app/examples/bench-scan.ttl"
-      - "--local-address"
-      - "${BACNET_LOCAL_ADDRESS:-0.0.0.0}"
+      - "--address"
+      - "${EDGE_BACNET_ADDRESS}"
+      - "--devices"
+      - "${EDGE_BACNET_DEVICES:-54545,5007}"
       - "--max-props"
       - "25"
       - "--host"
@@ -33,6 +36,7 @@ services:
     build:
       context: ../..
       dockerfile: examples/edge-microdot/Dockerfile
+    restart: unless-stopped
     ports:
       - "8080:8080"
     environment:
@@ -43,8 +47,11 @@ services:
       NIAGARA_INSECURE: "${NIAGARA_INSECURE:-0}"
       NIAGARA_WS_AUTH_HEADER: "${NIAGARA_WS_AUTH_HEADER:-0}"
       EDGE_POLL_INTERVAL: "${EDGE_POLL_INTERVAL:-15}"
+      EDGE_FLUSH_INTERVAL: "${EDGE_FLUSH_INTERVAL:-30}"
       EDGE_DB_PATH: /app/examples/edge-microdot/var/edge_history.duckdb
-      EDGE_ENABLE_SPARQL: "${EDGE_ENABLE_SPARQL:-1}"
+      EDGE_DB_MAX_MB: "${EDGE_DB_MAX_MB:-100}"
+      EDGE_ENABLE_SPARQL: "${EDGE_ENABLE_SPARQL:-0}"
+      BASK_BASE_ORD: "${BASK_BASE_ORD:-slot:/Drivers}"
     volumes:
       - ./var:/app/examples/edge-microdot/var
     command:
@@ -52,10 +59,8 @@ services:
       - "niagara"
       - "--station"
       - "${NIAGARA_URL}"
-      - "--points"
-      - "/app/examples/illustrative-ahu-refs.ttl"
       - "--base"
-      - "${BASK_BASE_ORD:-slot:/Drivers/BacnetNetwork}"
+      - "${BASK_BASE_ORD:-slot:/Drivers}"
       - "--host"
       - "0.0.0.0"
       - "--port"

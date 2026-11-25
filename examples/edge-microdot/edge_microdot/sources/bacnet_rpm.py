@@ -21,6 +21,30 @@ from typing import Any, Protocol, Sequence
 from edge_microdot.models import PointSample, PointTarget, utc_now_iso
 
 
+def normalize_discovered_object_id(raw: Any) -> str | None:
+    """Normalize a Who-Is / object-list entry to ``type,instance``."""
+    if raw is None:
+        return None
+    if isinstance(raw, (tuple, list)) and len(raw) >= 2:
+        typ, inst = raw[0], raw[1]
+        typ_s = str(typ).strip().replace("_", "-")
+        inst_s = str(inst).strip()
+        if typ_s and inst_s.isdigit():
+            return f"{typ_s},{inst_s}"
+        return None
+    s = str(raw).strip().strip("()")
+    if "," not in s:
+        return None
+    typ, inst = s.split(",", 1)
+    typ_s = typ.strip().replace("_", "-")
+    inst_s = inst.strip()
+    if typ_s and inst_s.isdigit():
+        return f"{typ_s},{inst_s}"
+    return None
+
+
+
+
 @dataclass(slots=True)
 class DeviceInfo:
     device_instance: int
@@ -422,3 +446,45 @@ class BacnetRpmSource:
             if item_status == "ok" and item_val is not None:
                 objects.append(str(item_val))
         return objects
+
+    async def discover_targets(
+        self,
+        device_instances: Sequence[int],
+        *,
+        site: str,
+        skip_types: frozenset[str] = frozenset({"device", "network-port"}),
+    ) -> list[PointTarget]:
+        """Who-Is the requested devices, read each object-list, and build poll targets."""
+        wanted = [int(x) for x in device_instances]
+        if not wanted:
+            self.targets = []
+            return []
+        try:
+            await self.who_is()
+        except Exception:
+            # Targeted Who-Is below still runs per instance.
+            pass
+        targets: list[PointTarget] = []
+        for inst in wanted:
+            dev = await self._resolve_device(inst)
+            if dev is None:
+                continue
+            objects = await self.discover_objects(inst)
+            for raw in objects:
+                obj_id = normalize_discovered_object_id(raw)
+                if obj_id is None:
+                    continue
+                typ = obj_id.split(",", 1)[0].casefold()
+                if typ in skip_types:
+                    continue
+                targets.append(
+                    PointTarget(
+                        site=site,
+                        device=str(inst),
+                        object_id=obj_id,
+                        device_address=dev.address,
+                        label=obj_id,
+                    )
+                )
+        self.targets = targets
+        return targets

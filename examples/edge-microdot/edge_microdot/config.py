@@ -301,3 +301,32 @@ def load_config(path: str | Path, *, site: str = "demo-site", base_iri: str = "h
     if suffix == ".csv":
         return LoadedConfig(site=site, targets=_targets_from_csv(p, site))
     raise ValueError(f"Unsupported points/config format: {p.suffix}")
+
+
+_INVALID_BACNET_ADDRESSES = {"", "0.0.0.0", "0.0.0.0/0", "0.0.0.0/24", "::", "::/0"}
+
+
+def resolve_bacnet_local_address(*, cli: str | None = None, config: str | None = None) -> str:
+    """Return the first usable BACpypes3 bind address (host/prefix).
+
+    BACpypes3 needs the Pi's LAN CIDR, e.g. ``192.168.204.59/24``. A wildcard
+    such as ``0.0.0.0`` is rejected. Preference order is ``--address`` /
+    ``--local-address``, then ``EDGE_BACNET_ADDRESS``, then
+    ``BACNET_LOCAL_ADDRESS``, then a YAML ``bacnet.local_address``.
+    """
+    import os
+
+    ordered = [
+        cli,
+        os.environ.get("EDGE_BACNET_ADDRESS"),
+        os.environ.get("BACNET_LOCAL_ADDRESS"),
+        config,
+    ]
+    for raw in ordered:
+        val = (raw or "").strip()
+        if val and val.casefold() not in _INVALID_BACNET_ADDRESSES:
+            return val
+    raise ValueError(
+        "BACnet driver requires a local CIDR address such as 192.168.204.59/24 "
+        "(set EDGE_BACNET_ADDRESS or pass --address)"
+    )

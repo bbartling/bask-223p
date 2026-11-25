@@ -10,7 +10,7 @@ from typing import Sequence
 
 from edge_microdot.app import create_app
 from edge_microdot.cache import HotCache
-from edge_microdot.config import load_config
+from edge_microdot.config import load_config, resolve_bacnet_local_address
 from edge_microdot.fdd import FddEngine
 from edge_microdot.history_store import HistoryStore
 from edge_microdot.logging_setup import configure_logging
@@ -34,7 +34,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--site", default=None)
     p.add_argument("--station", default=None, help="Niagara URL (or NIAGARA_URL)")
     p.add_argument("--base", default=None, help="Niagara browse root ORD")
-    p.add_argument("--local-address", default=None)
+    p.add_argument("--local-address", "--address", dest="local_address", default=None,
+                   help="BACpypes3 bind address, e.g. 192.168.204.59/24 (or EDGE_BACNET_ADDRESS)")
+    p.add_argument("--devices", default=None,
+                   help="Comma-separated BACnet device instances for Who-Is discovery")
     p.add_argument("--max-props", type=int, default=None)
     p.add_argument("--host", default=None)
     p.add_argument("--port", type=int, default=None)
@@ -49,6 +52,24 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--fake-points", type=int, default=50, help="Fake driver point count for demos/tests")
     p.add_argument("--once", action="store_true", help="Poll once and exit (no server)")
     return p
+
+
+
+def _device_instances(args: argparse.Namespace) -> list[int]:
+    raw = args.devices or os.environ.get("EDGE_BACNET_DEVICES") or ""
+    out: list[int] = []
+    for part in raw.replace(";", ",").split(","):
+        part = part.strip()
+        if not part:
+            continue
+        out.append(int(part))
+    return out
+
+
+def _sparql_enabled(cfg) -> bool:
+    if os.environ.get("EDGE_ENABLE_SPARQL") is not None:
+        return _env_bool("EDGE_ENABLE_SPARQL")
+    return bool(cfg.graph and len(cfg.graph) > 0)
 
 
 def _resolve_driver(args: argparse.Namespace) -> str:
@@ -87,25 +108,33 @@ def build_runtime(argv: Sequence[str] | None = None) -> tuple:
     if driver == "fake" and not targets:
         targets = _build_targets_fake(args.fake_points, site)
 
-    if driver in {"bacnet", "niagara"} and not targets and args.points is None:
-        raise SystemExit(f"{driver} driver requires --points or preconfigured targets")
-
     source_kind = driver
     if driver == "fake":
         source = FakePollSource(targets)
     elif driver == "bacnet":
+        address = resolve_bacnet_local_address(cli=args.local_address, config=cfg.local_address)
         source = BacnetRpmSource(
             targets,
-            local_address=args.local_address or cfg.local_address,
+            local_address=address,
             max_props=args.max_props or cfg.max_props,
         )
+        if not targets:
+            instances = _device_instances(args)
+            if not instances:
+                raise SystemExit(
+                    "bacnet driver requires --points or EDGE_BACNET_DEVICES / --devices "
+                    "(comma-separated device instances to discover via Who-Is)"
+                )
+            targets = asyncio.run(source.discover_targets(instances, site=site))
+            if not targets:
+                raise SystemExit(f"Who-Is discovery found no pollable objects for devices {instances}")
     elif driver == "niagara":
         source = BaskStreamSource(
             station=args.station,
             targets=targets,
             insecure=args.insecure or _env_bool("NIAGARA_INSECURE"),
             send_auth_header=args.ws_auth_header or _env_bool("NIAGARA_WS_AUTH_HEADER"),
-            base_ord=args.base or cfg.base_ord,
+            base_ord=args.base or os.environ.get("BASK_BASE_ORD") or cfg.base_ord,
             site=site,
         )
     else:
@@ -117,7 +146,7 @@ def build_runtime(argv: Sequence[str] | None = None) -> tuple:
     max_mb = args.db_max_mb or int(os.environ.get("EDGE_DB_MAX_MB", "100"))
     history = HistoryStore(db_path, max_bytes=max_mb * 1024 * 1024)
     fdd = FddEngine(history=history)
-    enable_sparql = _env_bool("EDGE_ENABLE_SPARQL") or bool(cfg.graph and len(cfg.graph) > 0)
+    enable_sparql = _sparql_enabled(cfg)
     if not enable_sparql:
         sparql = SparqlKb(None)
     else:

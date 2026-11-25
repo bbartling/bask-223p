@@ -46,18 +46,26 @@ Host networking exposes UDP **47808**.
 
 ```bash
 git clone <repo> && cd <repo>/examples/edge-microdot
+cp .env.example .env
+# Set EDGE_BACNET_ADDRESS to this host's LAN CIDR, e.g. 192.168.204.59/24
 docker compose --profile bacnet build
-docker compose --profile bacnet up
+docker compose --profile bacnet up -d
 ```
+
+The BACnet service uses **host networking** and binds BACpypes3 to
+`EDGE_BACNET_ADDRESS` (passed as `--address`). A wildcard such as `0.0.0.0`
+will not work. Device instances default to `54545,5007` and are discovered
+with Who-Is plus each device's object-list.
 
 Native (on the Pi):
 
 ```bash
 python3 -m pip install -e ../.. -e '.[sparql]'
 export EDGE_DRIVER=bacnet
+export EDGE_BACNET_ADDRESS=192.168.204.59/24
 python -m edge_microdot \
-  --points ../../examples/bench-scan.ttl \
-  --local-address 0.0.0.0/24 \
+  --address 192.168.204.59/24 \
+  --devices 54545,5007 \
   --max-props 25
 ```
 
@@ -68,11 +76,13 @@ Open `http://<pi>:8080/` for live values, sparklines, and rule flags.
 Credentials **only** from the environment:
 
 ```bash
-export NIAGARA_URL=https://<station-host>
-export NIAGARA_USER=reader
-export NIAGARA_PASS=***
-docker compose --profile niagara up
+cp .env.example .env
+# Fill NIAGARA_URL / NIAGARA_USER / NIAGARA_PASS in .env (chmod 600)
+docker compose --profile niagara up -d
 ```
+
+With no `--points` file the Niagara driver browses the station (default
+`BASK_BASE_ORD=slot:/Drivers`) and then polls those objects read-only.
 
 The client uses form SCRAM first, then **HTTP Basic** on `/stream/health` and the WebSocket when SCRAM final messages are empty (same behavior as `bask_223p.bacnet.baskstream`).
 
@@ -89,7 +99,9 @@ The client uses form SCRAM first, then **HTTP Basic** on `/stream/health` and th
 | `EDGE_DB_PATH` | `var/edge_history.duckdb` | History file |
 | `EDGE_DB_MAX_MB` | `100` | Oldest-first retention cap |
 | `EDGE_HOT_BACKEND` | `dict` | `dict` or `duckdb` (`:memory:`) |
-| `EDGE_ENABLE_SPARQL` | `0` (auto on if TTL loaded) | Load pyoxigraph store |
+| `EDGE_ENABLE_SPARQL` | `0` | Load pyoxigraph store. An explicit `0` stays off even if a TTL is loaded |
+| `EDGE_BACNET_ADDRESS` | — | BACpypes3 bind address (`host/prefix`, required for the BACnet driver) |
+| `EDGE_BACNET_DEVICES` | `54545,5007` | Device instances to discover via Who-Is when no point file is given |
 | `NIAGARA_URL` / `USER` / `PASS` | — | Required for Niagara driver |
 | `NIAGARA_INSECURE` | `0` | Skip TLS verify (lab only) |
 | `NIAGARA_WS_AUTH_HEADER` | `0` | Basic auth on WS handshake |

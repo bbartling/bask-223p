@@ -67,3 +67,33 @@ def test_chunking_and_fallback():
     samples = asyncio.run(src.poll_once_async())
     assert len(samples) == 20
     assert tr.rpm_calls == [8, 8, 4]
+
+def test_discover_targets_via_who_is():
+    tr = _FakeTransport(max_apdu=1476)
+    tr.values[("device,10001", "object-list")] = [
+        "device,10001",
+        "analog-input,1",
+        "analog-value,2",
+        "network-port,1",
+    ]
+    src = BacnetRpmSource([], transport=tr, local_address="192.168.204.59/24")
+    targets = asyncio.run(src.discover_targets([10001], site="bench"))
+    assert [t.object_id for t in targets] == ["analog-input,1", "analog-value,2"]
+    assert all(t.device == "10001" for t in targets)
+    assert all(t.device_address == "192.168.1.50" for t in targets)
+
+
+def test_resolve_bacnet_local_address(monkeypatch):
+    from edge_microdot.config import resolve_bacnet_local_address
+
+    monkeypatch.delenv("EDGE_BACNET_ADDRESS", raising=False)
+    monkeypatch.delenv("BACNET_LOCAL_ADDRESS", raising=False)
+    assert resolve_bacnet_local_address(cli="192.168.204.59/24", config="0.0.0.0") == "192.168.204.59/24"
+    monkeypatch.setenv("EDGE_BACNET_ADDRESS", "192.168.204.60/24")
+    assert resolve_bacnet_local_address(cli=None, config="0.0.0.0") == "192.168.204.60/24"
+    monkeypatch.delenv("EDGE_BACNET_ADDRESS", raising=False)
+    try:
+        resolve_bacnet_local_address(cli=None, config="0.0.0.0")
+        raise AssertionError("expected ValueError for wildcard address")
+    except ValueError as exc:
+        assert "EDGE_BACNET_ADDRESS" in str(exc)
