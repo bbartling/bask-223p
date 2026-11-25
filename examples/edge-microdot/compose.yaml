@@ -13,7 +13,7 @@ services:
       EDGE_DB_PATH: /app/examples/edge-microdot/var/edge_history.duckdb
       EDGE_DB_MAX_MB: "${EDGE_DB_MAX_MB:-100}"
       EDGE_ENABLE_SPARQL: "${EDGE_ENABLE_SPARQL:-0}"
-      EDGE_BACNET_ADDRESS: "${EDGE_BACNET_ADDRESS:?set EDGE_BACNET_ADDRESS to the host LAN CIDR, e.g. 192.168.204.59/24}"
+      EDGE_BACNET_ADDRESS: "${EDGE_BACNET_ADDRESS:-}"
       EDGE_BACNET_DEVICES: "${EDGE_BACNET_DEVICES:-54545,5007}"
     volumes:
       - ./var:/app/examples/edge-microdot/var
@@ -41,9 +41,9 @@ services:
       - "8080:8080"
     environment:
       EDGE_DRIVER: niagara
-      NIAGARA_URL: ${NIAGARA_URL:?set NIAGARA_URL}
-      NIAGARA_USER: ${NIAGARA_USER:?set NIAGARA_USER}
-      NIAGARA_PASS: ${NIAGARA_PASS:?set NIAGARA_PASS}
+      NIAGARA_URL: ${NIAGARA_URL:-}
+      NIAGARA_USER: ${NIAGARA_USER:-}
+      NIAGARA_PASS: ${NIAGARA_PASS:-}
       NIAGARA_INSECURE: "${NIAGARA_INSECURE:-0}"
       NIAGARA_WS_AUTH_HEADER: "${NIAGARA_WS_AUTH_HEADER:-0}"
       EDGE_POLL_INTERVAL: "${EDGE_POLL_INTERVAL:-15}"
