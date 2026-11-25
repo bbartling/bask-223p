@@ -144,19 +144,25 @@ class Bacpypes3Transport:
     async def start(self) -> None:
         if self.app is not None:
             return
-        from bacpypes3.app import Application
-        from bacpypes3.local.device import DeviceObject
-        from bacpypes3.pdu import Address
+        import argparse
 
-        dev = DeviceObject(
-            objectIdentifier=("device", self.device_instance),
-            objectName="live-ingest-client",
-            vendorIdentifier=999,
-            maxApduLengthAccepted=1476,
-            segmentationSupported="segmentedBoth",
+        from bacpypes3.app import Application
+
+        # BACpypes3 0.1.x must be built with from_args/from_object_list so the
+        # application service access point is linked. Application(device, address)
+        # leaves elementService unset and Who-Is fails. Call this from a running
+        # event loop.
+        ns = argparse.Namespace(
+            vendoridentifier=999,
+            instance=int(self.device_instance),
+            name="edge-microdot-client",
+            address=self.local_address,
+            foreign=None,
+            network=0,
+            bbmd=None,
+            ttl=30,
         )
-        addr = Address(self.local_address)
-        self.app = Application(dev, addr)
+        self.app = Application.from_args(ns)
 
     async def close(self) -> None:
         if self.app is not None:
