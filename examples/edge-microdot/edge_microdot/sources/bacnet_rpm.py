@@ -14,6 +14,7 @@ Lessons applied from BACpypes3 RPM / APDU-budget practice:
 from __future__ import annotations
 
 import asyncio
+import re
 import math
 from dataclasses import dataclass, field
 from typing import Any, Protocol, Sequence
@@ -21,23 +22,47 @@ from typing import Any, Protocol, Sequence
 from edge_microdot.models import PointSample, PointTarget, utc_now_iso
 
 
+def _to_kebab(s: str) -> str:
+    s = s.replace("_", "-")
+    s = re.sub(r"([a-z0-9])([A-Z])", r"\1-\2", s)
+    return s.casefold()
+
+
+def _object_type_name(typ: Any) -> str:
+    if typ is None:
+        return ""
+    for attr in ("name", "attr"):
+        val = getattr(typ, attr, None)
+        if isinstance(val, str) and val and not val.startswith("<"):
+            return _to_kebab(val)
+    s = str(typ).strip()
+    if s.startswith("<") and ":" in s:
+        s = s.strip("<>").split(":", 1)[-1].strip()
+    if "." in s and s.split(".", 1)[0].isalpha():
+        s = s.rsplit(".", 1)[-1]
+    return _to_kebab(s)
+
+
 def normalize_discovered_object_id(raw: Any) -> str | None:
     """Normalize a Who-Is / object-list entry to ``type,instance``."""
     if raw is None:
         return None
     if isinstance(raw, (tuple, list)) and len(raw) >= 2:
-        typ, inst = raw[0], raw[1]
-        typ_s = str(typ).strip().replace("_", "-")
-        inst_s = str(inst).strip()
+        typ_s = _object_type_name(raw[0])
+        inst_s = str(raw[1]).strip().strip("]")
         if typ_s and inst_s.isdigit():
             return f"{typ_s},{inst_s}"
         return None
     s = str(raw).strip().strip("()")
+    # "[<ObjectType: analog-value>, 1]" or "analog-input,1168"
+    tagged = re.search(r"ObjectType:\s*([A-Za-z0-9_-]+)\s*>?,\s*(\d+)", s)
+    if tagged:
+        return f"{tagged.group(1).replace('_', '-')},{tagged.group(2)}"
     if "," not in s:
         return None
     typ, inst = s.split(",", 1)
-    typ_s = typ.strip().replace("_", "-")
-    inst_s = inst.strip()
+    typ_s = _object_type_name(typ)
+    inst_s = inst.strip().strip("]")
     if typ_s and inst_s.isdigit():
         return f"{typ_s},{inst_s}"
     return None
@@ -431,7 +456,7 @@ class BacnetRpmSource:
             raw = await self.transport.read_property(dev.address, dev_obj, "object-list")
             val, status = unwrap_bacnet_value(raw)
             if status == "ok" and isinstance(val, list):
-                return [str(x) for x in val]
+                return [oid for x in val if (oid := normalize_discovered_object_id(x))]
         except Exception as exc:
             if not _is_segmentation_abort(exc):
                 raise
@@ -450,7 +475,9 @@ class BacnetRpmSource:
             )
             item_val, item_status = unwrap_bacnet_value(item_raw)
             if item_status == "ok" and item_val is not None:
-                objects.append(str(item_val))
+                oid = normalize_discovered_object_id(item_val)
+                if oid:
+                    objects.append(oid)
         return objects
 
     async def discover_targets(

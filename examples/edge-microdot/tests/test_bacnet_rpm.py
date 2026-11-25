@@ -97,3 +97,12 @@ def test_resolve_bacnet_local_address(monkeypatch):
         raise AssertionError("expected ValueError for wildcard address")
     except ValueError as exc:
         assert "EDGE_BACNET_ADDRESS" in str(exc)
+
+def test_normalize_object_list_entries():
+    from edge_microdot.sources.bacnet_rpm import normalize_discovered_object_id
+
+    assert normalize_discovered_object_id(["analog-value", 1]) == "analog-value,1"
+    assert normalize_discovered_object_id(["analogValue", 1]) == "analog-value,1"
+    assert normalize_discovered_object_id("[<ObjectType: analog-value>, 1]") == "analog-value,1"
+    assert normalize_discovered_object_id("analog-input,1168") == "analog-input,1168"
+    assert normalize_discovered_object_id("device,54545") == "device,54545"
