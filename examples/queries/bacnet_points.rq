@@ -1,0 +1,10 @@
+PREFIX oc: <https://example.org/bask-223p/v2#>
+SELECT ?equipment ?fqpn ?device ?objectType ?objectInstance ?property WHERE {
+  ?equipment oc:hasPoint ?point .
+  ?point oc:fqpn ?fqpn ;
+         oc:device_instance ?device ;
+         oc:object_type ?objectType ;
+         oc:object_instance ?objectInstance ;
+         oc:property_identifier ?property .
+}
+ORDER BY ?fqpn

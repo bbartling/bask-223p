@@ -1,0 +1,14 @@
+@prefix oc: <https://example.org/bask-223p/v2#> .
+@prefix ex: <https://example.org/site-validation/> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+
+# This is an APPLICATION PROFILE for extraction; it is not ASHRAE 223.
+# A parent AHU with only child equipment has no direct points and does not
+# satisfy this shape. That is useful information, not a reason to invent edges.
+ex:EquipmentPointProfile a sh:NodeShape ;
+  sh:targetClass oc:Equipment ;
+  sh:property [
+    sh:name "directPoints" ;
+    sh:path oc:hasPoint ;
+    sh:minCount 1
+  ] .

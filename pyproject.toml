@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=70", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bask-223p"
+version = "0.1.0"
+description = "Read-only baskStream (Niagara) to ASHRAE 223P + Brick TTL maker with BACnet scan reconcile"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "Apache-2.0"}
+dependencies = ["rdflib>=7,<9", "openpyxl>=3.1.5"]
+
+[project.optional-dependencies]
+graph = ["pyshifty>=0.5.1,<0.8", "ontoenv>=0.6.4,<0.8", "pyshacl>=0.26"]
+fast = ["rapidfuzz>=3,<4"]
+bask = ["msgpack>=1.0", "websocket-client>=1.6", "requests>=2.31"]
+dev = ["pytest>=8,<10", "rapidfuzz>=3,<4"]
+all = ["pyshifty>=0.5.1,<0.8", "ontoenv>=0.6.4,<0.8", "pyshacl>=0.26", "rapidfuzz>=3,<4", "msgpack>=1.0", "websocket-client>=1.6", "requests>=2.31", "pytest>=8,<10"]
+
+[project.scripts]
+bask-223p = "bask_223p.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["bask_223p*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"

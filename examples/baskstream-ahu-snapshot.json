@@ -1,0 +1,180 @@
+{
+  "format": "baskstream-discovery-snapshot",
+  "version": 1,
+  "note": "Illustrative recorded baskStream discovery fixture (not a live site).",
+  "station": "https://illustrative-station.local",
+  "base": "slot:/Drivers/BacnetNetwork",
+  "apiVersion": "1.14",
+  "module": "baskStream",
+  "devices": [
+    {
+      "ord": "slot:/Drivers/BacnetNetwork/LabAHU_01",
+      "name": "LabAHU_01",
+      "typeSpec": "bacnet:BacnetDevice",
+      "device_instance": 10001,
+      "tags": [
+        {
+          "id": "hs:ahu",
+          "name": "ahu"
+        },
+        {
+          "id": "hs:equip",
+          "name": "equip"
+        }
+      ],
+      "points": [
+        {
+          "ord": "slot:/Drivers/BacnetNetwork/LabAHU_01/points/SAT",
+          "name": "SAT",
+          "display": "Supply Air Temp",
+          "typeSpec": "control:NumericPoint",
+          "valueKind": "numeric",
+          "writable": false,
+          "facets": {
+            "units": "\u00b0F",
+            "precision": 1
+          },
+          "haystackTags": [
+            "air",
+            "discharge",
+            "point",
+            "sensor",
+            "temp"
+          ],
+          "bacnet": {
+            "object_type": "analog-input",
+            "object_instance": 12,
+            "object_identifier": "analog-input,12",
+            "property_identifier": "present-value"
+          }
+        },
+        {
+          "ord": "slot:/Drivers/BacnetNetwork/LabAHU_01/points/RAT",
+          "name": "RAT",
+          "display": "Return Air Temp",
+          "typeSpec": "control:NumericPoint",
+          "valueKind": "numeric",
+          "writable": false,
+          "facets": {
+            "units": "\u00b0F",
+            "precision": 1
+          },
+          "haystackTags": [
+            "air",
+            "point",
+            "return",
+            "sensor",
+            "temp"
+          ],
+          "bacnet": {
+            "object_type": "analog-input",
+            "object_instance": 13,
+            "object_identifier": "analog-input,13",
+            "property_identifier": "present-value"
+          }
+        },
+        {
+          "ord": "slot:/Drivers/BacnetNetwork/LabAHU_01/points/DuctStatic",
+          "name": "DuctStatic",
+          "display": "Duct Static Pressure",
+          "typeSpec": "control:NumericPoint",
+          "valueKind": "numeric",
+          "writable": false,
+          "facets": {
+            "units": "inH\u2082O",
+            "precision": 2
+          },
+          "haystackTags": [
+            "air",
+            "discharge",
+            "point",
+            "pressure",
+            "sensor"
+          ],
+          "bacnet": {
+            "object_type": "analog-input",
+            "object_instance": 14,
+            "object_identifier": "analog-input,14",
+            "property_identifier": "present-value"
+          }
+        },
+        {
+          "ord": "slot:/Drivers/BacnetNetwork/LabAHU_01/points/SF_Status",
+          "name": "SF_Status",
+          "display": "Supply Fan Status",
+          "typeSpec": "control:BooleanPoint",
+          "valueKind": "boolean",
+          "writable": false,
+          "facets": {
+            "trueText": "On",
+            "falseText": "Off"
+          },
+          "haystackTags": [
+            "fan",
+            "point",
+            "run",
+            "sensor"
+          ],
+          "bacnet": {
+            "object_type": "binary-input",
+            "object_instance": 1,
+            "object_identifier": "binary-input,1",
+            "property_identifier": "present-value"
+          }
+        },
+        {
+          "ord": "slot:/Drivers/BacnetNetwork/LabAHU_01/points/CHW_Valve",
+          "name": "CHW_Valve",
+          "display": "Chilled Water Valve Command",
+          "typeSpec": "control:NumericWritable",
+          "valueKind": "numeric",
+          "writable": true,
+          "facets": {
+            "units": "%",
+            "precision": 0
+          },
+          "haystackTags": [
+            "chilled",
+            "cmd",
+            "point",
+            "valve",
+            "water"
+          ],
+          "bacnet": {
+            "object_type": "analog-output",
+            "object_instance": 2,
+            "object_identifier": "analog-output,2",
+            "property_identifier": "present-value",
+            "priority_for_writing": 10
+          }
+        },
+        {
+          "ord": "slot:/Drivers/BacnetNetwork/LabAHU_01/points/SAT_SP",
+          "name": "SAT_SP",
+          "display": "Supply Air Temp Setpoint",
+          "typeSpec": "control:NumericWritable",
+          "valueKind": "numeric",
+          "writable": true,
+          "facets": {
+            "units": "\u00b0F",
+            "precision": 1
+          },
+          "haystackTags": [
+            "air",
+            "discharge",
+            "point",
+            "sp",
+            "temp"
+          ],
+          "bacnet": {
+            "object_type": "analog-value",
+            "object_instance": 1,
+            "object_identifier": "analog-value,1",
+            "property_identifier": "present-value",
+            "priority_for_writing": 16
+          }
+        }
+      ]
+    }
+  ]
+}

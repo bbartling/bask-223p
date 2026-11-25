@@ -1,0 +1,293 @@
+# Illustrative AHU fixture only — not a live site model.
+# Device instance 10001 (IllustrativeAHU): SAT AI:12, RAT AI:13, MAT AI:14, OAT AI:15,
+# SF status BI:1, SF speed cmd AO:1, CHW valve AO:2, HW valve AO:3, OA damper AO:4,
+# SAT setpoint AV:1 (optional bacnet:priority-for-writing 16).
+# Each point has s223:hasExternalReference to an s223:BACnetExternalReference
+# (ASHRAE 223P 2nd public review draft, section 11.18.1).
+
+@prefix bacnet: <http://data.ashrae.org/bacnet/2020#> .
+@prefix bacnet2024: <http://data.ashrae.org/bacnet/2024#> .
+@prefix oc: <https://example.org/bask-223p/v2#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix ref: <https://brickschema.org/schema/Brick/ref#> .
+@prefix s223: <http://data.ashrae.org/standard223#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+<https://example.org/illustrative-ahu/point/1d931d645baf6575070b> a oc:AddressedPoint,
+        oc:Point ;
+    rdfs:label "Illustrative: supply air temperature setpoint" ;
+    s223:hasExternalReference <https://example.org/illustrative-ahu/bacnet-ref/02e935630607a4e73380> ;
+    ref:hasExternalReference <https://example.org/illustrative-ahu/bacnet-ref/02e935630607a4e73380> ;
+    oc:haystackTags "point sp" ;
+    oc:object_name "SAT-SP" .
+
+<https://example.org/illustrative-ahu/point/2dfc623058a5cc9a9fef> a oc:AddressedPoint,
+        oc:Point ;
+    rdfs:label "Illustrative: mixed air temperature" ;
+    s223:hasExternalReference <https://example.org/illustrative-ahu/bacnet-ref/8f7fc34504267e4349b3> ;
+    ref:hasExternalReference <https://example.org/illustrative-ahu/bacnet-ref/8f7fc34504267e4349b3> ;
+    oc:haystackTags "point sensor temp" ;
+    oc:object_name "MAT" .
+
+<https://example.org/illustrative-ahu/point/60b4b97bc4b600cea18d> a oc:AddressedPoint,
+        oc:Point ;
+    rdfs:label "Illustrative: hot-water valve command" ;
+    s223:hasExternalReference <https://example.org/illustrative-ahu/bacnet-ref/38086131658691ae0f3d> ;
+    ref:hasExternalReference <https://example.org/illustrative-ahu/bacnet-ref/38086131658691ae0f3d> ;
+    oc:haystackTags "point cmd" ;
+    oc:object_name "HW-VLV" .
+
+<https://example.org/illustrative-ahu/point/6d228cab55ad4283359a> a oc:AddressedPoint,
+        oc:Point ;
+    rdfs:label "Illustrative: supply fan status" ;
+    s223:hasExternalReference <https://example.org/illustrative-ahu/bacnet-ref/d91db8322ca5c9a37a35> ;
+    ref:hasExternalReference <https://example.org/illustrative-ahu/bacnet-ref/d91db8322ca5c9a37a35> ;
+    oc:haystackTags "point sensor" ;
+    oc:object_name "SF-S" .
+
+<https://example.org/illustrative-ahu/point/8762508f20606d1ad953> a oc:AddressedPoint,
+        oc:Point ;
+    rdfs:label "Illustrative: outdoor-air damper command" ;
+    s223:hasExternalReference <https://example.org/illustrative-ahu/bacnet-ref/20f1c7f4039a0647c54c> ;
+    ref:hasExternalReference <https://example.org/illustrative-ahu/bacnet-ref/20f1c7f4039a0647c54c> ;
+    oc:haystackTags "point cmd" ;
+    oc:object_name "OA-DMPR" .
+
+<https://example.org/illustrative-ahu/point/90e277ba032785d63661> a oc:AddressedPoint,
+        oc:Point ;
+    rdfs:label "Illustrative: return air temperature" ;
+    s223:hasExternalReference <https://example.org/illustrative-ahu/bacnet-ref/55c1d7ada2add34bd5f8> ;
+    ref:hasExternalReference <https://example.org/illustrative-ahu/bacnet-ref/55c1d7ada2add34bd5f8> ;
+    oc:haystackTags "point sensor temp" ;
+    oc:object_name "RAT" .
+
+<https://example.org/illustrative-ahu/point/9e921023c4b709d0537e> a oc:AddressedPoint,
+        oc:Point ;
+    rdfs:label "Illustrative: outside air temperature" ;
+    s223:hasExternalReference <https://example.org/illustrative-ahu/bacnet-ref/377c7e2c1841c60d82f4> ;
+    ref:hasExternalReference <https://example.org/illustrative-ahu/bacnet-ref/377c7e2c1841c60d82f4> ;
+    oc:haystackTags "point sensor temp" ;
+    oc:object_name "OAT" .
+
+<https://example.org/illustrative-ahu/point/c27c37be97109ef64d0d> a oc:AddressedPoint,
+        oc:Point ;
+    rdfs:label "Illustrative: supply air temperature" ;
+    s223:hasExternalReference <https://example.org/illustrative-ahu/bacnet-ref/81b5eff1e8b84b7bf2d7> ;
+    ref:hasExternalReference <https://example.org/illustrative-ahu/bacnet-ref/81b5eff1e8b84b7bf2d7> ;
+    oc:haystackTags "point sensor temp" ;
+    oc:object_name "SAT" .
+
+<https://example.org/illustrative-ahu/point/dee688d9392cd9b42ae7> a oc:AddressedPoint,
+        oc:Point ;
+    rdfs:label "Illustrative: chilled-water valve command" ;
+    s223:hasExternalReference <https://example.org/illustrative-ahu/bacnet-ref/884ae1c232eedf4333c7> ;
+    ref:hasExternalReference <https://example.org/illustrative-ahu/bacnet-ref/884ae1c232eedf4333c7> ;
+    oc:haystackTags "point cmd" ;
+    oc:object_name "CHW-VLV" .
+
+<https://example.org/illustrative-ahu/point/e94959d8ee4dacc87be8> a oc:AddressedPoint,
+        oc:Point ;
+    rdfs:label "Illustrative: supply fan speed command" ;
+    s223:hasExternalReference <https://example.org/illustrative-ahu/bacnet-ref/d3d5ce7ede9d7b54e458> ;
+    ref:hasExternalReference <https://example.org/illustrative-ahu/bacnet-ref/d3d5ce7ede9d7b54e458> ;
+    oc:haystackTags "point cmd" ;
+    oc:object_name "SF-O" .
+
+<bacnet://10001/analog-input,12> a bacnet2024:Object ;
+    bacnet2024:object-identifier "analog-input,12" ;
+    bacnet2024:object-name "SAT" ;
+    bacnet2024:object-type bacnet2024:ObjectType.analog-input .
+
+<bacnet://10001/analog-input,13> a bacnet2024:Object ;
+    bacnet2024:object-identifier "analog-input,13" ;
+    bacnet2024:object-name "RAT" ;
+    bacnet2024:object-type bacnet2024:ObjectType.analog-input .
+
+<bacnet://10001/analog-input,14> a bacnet2024:Object ;
+    bacnet2024:object-identifier "analog-input,14" ;
+    bacnet2024:object-name "MAT" ;
+    bacnet2024:object-type bacnet2024:ObjectType.analog-input .
+
+<bacnet://10001/analog-input,15> a bacnet2024:Object ;
+    bacnet2024:object-identifier "analog-input,15" ;
+    bacnet2024:object-name "OAT" ;
+    bacnet2024:object-type bacnet2024:ObjectType.analog-input .
+
+<bacnet://10001/analog-output,1> a bacnet2024:Object ;
+    bacnet2024:object-identifier "analog-output,1" ;
+    bacnet2024:object-name "SF-O" ;
+    bacnet2024:object-type bacnet2024:ObjectType.analog-output .
+
+<bacnet://10001/analog-output,2> a bacnet2024:Object ;
+    bacnet2024:object-identifier "analog-output,2" ;
+    bacnet2024:object-name "CHW-VLV" ;
+    bacnet2024:object-type bacnet2024:ObjectType.analog-output .
+
+<bacnet://10001/analog-output,3> a bacnet2024:Object ;
+    bacnet2024:object-identifier "analog-output,3" ;
+    bacnet2024:object-name "HW-VLV" ;
+    bacnet2024:object-type bacnet2024:ObjectType.analog-output .
+
+<bacnet://10001/analog-output,4> a bacnet2024:Object ;
+    bacnet2024:object-identifier "analog-output,4" ;
+    bacnet2024:object-name "OA-DMPR" ;
+    bacnet2024:object-type bacnet2024:ObjectType.analog-output .
+
+<bacnet://10001/analog-value,1> a bacnet2024:Object ;
+    bacnet2024:object-identifier "analog-value,1" ;
+    bacnet2024:object-name "SAT-SP" ;
+    bacnet2024:object-type bacnet2024:ObjectType.analog-value .
+
+<bacnet://10001/binary-input,1> a bacnet2024:Object ;
+    bacnet2024:object-identifier "binary-input,1" ;
+    bacnet2024:object-name "SF-S" ;
+    bacnet2024:object-type bacnet2024:ObjectType.binary-input .
+
+<https://example.org/illustrative-ahu/bacnet-ref/02e935630607a4e73380> a s223:BACnetExternalReference,
+        ref:BACnetReference ;
+    bacnet:description "Illustrative: supply air temperature setpoint" ;
+    bacnet:device-identifier "device,10001" ;
+    bacnet:device-name "IllustrativeAHU" ;
+    bacnet:object-identifier "analog-value,1" ;
+    bacnet:object-name "SAT-SP" ;
+    bacnet:object-type "analog-value" ;
+    bacnet:objectOf <bacnet://10001> ;
+    bacnet:priority-for-writing "16"^^xsd:nonNegativeInteger ;
+    bacnet:property-identifier "present-value" ;
+    ref:BACnetURI "bacnet://10001/analog-value,1" .
+
+<https://example.org/illustrative-ahu/bacnet-ref/20f1c7f4039a0647c54c> a s223:BACnetExternalReference,
+        ref:BACnetReference ;
+    bacnet:description "Illustrative: outdoor-air damper command" ;
+    bacnet:device-identifier "device,10001" ;
+    bacnet:device-name "IllustrativeAHU" ;
+    bacnet:object-identifier "analog-output,4" ;
+    bacnet:object-name "OA-DMPR" ;
+    bacnet:object-type "analog-output" ;
+    bacnet:objectOf <bacnet://10001> ;
+    bacnet:property-identifier "present-value" ;
+    ref:BACnetURI "bacnet://10001/analog-output,4" .
+
+<https://example.org/illustrative-ahu/bacnet-ref/377c7e2c1841c60d82f4> a s223:BACnetExternalReference,
+        ref:BACnetReference ;
+    bacnet:description "Illustrative: outside air temperature" ;
+    bacnet:device-identifier "device,10001" ;
+    bacnet:device-name "IllustrativeAHU" ;
+    bacnet:object-identifier "analog-input,15" ;
+    bacnet:object-name "OAT" ;
+    bacnet:object-type "analog-input" ;
+    bacnet:objectOf <bacnet://10001> ;
+    bacnet:property-identifier "present-value" ;
+    ref:BACnetURI "bacnet://10001/analog-input,15" .
+
+<https://example.org/illustrative-ahu/bacnet-ref/38086131658691ae0f3d> a s223:BACnetExternalReference,
+        ref:BACnetReference ;
+    bacnet:description "Illustrative: hot-water valve command" ;
+    bacnet:device-identifier "device,10001" ;
+    bacnet:device-name "IllustrativeAHU" ;
+    bacnet:object-identifier "analog-output,3" ;
+    bacnet:object-name "HW-VLV" ;
+    bacnet:object-type "analog-output" ;
+    bacnet:objectOf <bacnet://10001> ;
+    bacnet:property-identifier "present-value" ;
+    ref:BACnetURI "bacnet://10001/analog-output,3" .
+
+<https://example.org/illustrative-ahu/bacnet-ref/55c1d7ada2add34bd5f8> a s223:BACnetExternalReference,
+        ref:BACnetReference ;
+    bacnet:description "Illustrative: return air temperature" ;
+    bacnet:device-identifier "device,10001" ;
+    bacnet:device-name "IllustrativeAHU" ;
+    bacnet:object-identifier "analog-input,13" ;
+    bacnet:object-name "RAT" ;
+    bacnet:object-type "analog-input" ;
+    bacnet:objectOf <bacnet://10001> ;
+    bacnet:property-identifier "present-value" ;
+    ref:BACnetURI "bacnet://10001/analog-input,13" .
+
+<https://example.org/illustrative-ahu/bacnet-ref/81b5eff1e8b84b7bf2d7> a s223:BACnetExternalReference,
+        ref:BACnetReference ;
+    bacnet:description "Illustrative: supply air temperature" ;
+    bacnet:device-identifier "device,10001" ;
+    bacnet:device-name "IllustrativeAHU" ;
+    bacnet:object-identifier "analog-input,12" ;
+    bacnet:object-name "SAT" ;
+    bacnet:object-type "analog-input" ;
+    bacnet:objectOf <bacnet://10001> ;
+    bacnet:property-identifier "present-value" ;
+    ref:BACnetURI "bacnet://10001/analog-input,12" .
+
+<https://example.org/illustrative-ahu/bacnet-ref/884ae1c232eedf4333c7> a s223:BACnetExternalReference,
+        ref:BACnetReference ;
+    bacnet:description "Illustrative: chilled-water valve command" ;
+    bacnet:device-identifier "device,10001" ;
+    bacnet:device-name "IllustrativeAHU" ;
+    bacnet:object-identifier "analog-output,2" ;
+    bacnet:object-name "CHW-VLV" ;
+    bacnet:object-type "analog-output" ;
+    bacnet:objectOf <bacnet://10001> ;
+    bacnet:property-identifier "present-value" ;
+    ref:BACnetURI "bacnet://10001/analog-output,2" .
+
+<https://example.org/illustrative-ahu/bacnet-ref/8f7fc34504267e4349b3> a s223:BACnetExternalReference,
+        ref:BACnetReference ;
+    bacnet:description "Illustrative: mixed air temperature" ;
+    bacnet:device-identifier "device,10001" ;
+    bacnet:device-name "IllustrativeAHU" ;
+    bacnet:object-identifier "analog-input,14" ;
+    bacnet:object-name "MAT" ;
+    bacnet:object-type "analog-input" ;
+    bacnet:objectOf <bacnet://10001> ;
+    bacnet:property-identifier "present-value" ;
+    ref:BACnetURI "bacnet://10001/analog-input,14" .
+
+<https://example.org/illustrative-ahu/bacnet-ref/d3d5ce7ede9d7b54e458> a s223:BACnetExternalReference,
+        ref:BACnetReference ;
+    bacnet:description "Illustrative: supply fan speed command" ;
+    bacnet:device-identifier "device,10001" ;
+    bacnet:device-name "IllustrativeAHU" ;
+    bacnet:object-identifier "analog-output,1" ;
+    bacnet:object-name "SF-O" ;
+    bacnet:object-type "analog-output" ;
+    bacnet:objectOf <bacnet://10001> ;
+    bacnet:property-identifier "present-value" ;
+    ref:BACnetURI "bacnet://10001/analog-output,1" .
+
+<https://example.org/illustrative-ahu/bacnet-ref/d91db8322ca5c9a37a35> a s223:BACnetExternalReference,
+        ref:BACnetReference ;
+    bacnet:description "Illustrative: supply fan status" ;
+    bacnet:device-identifier "device,10001" ;
+    bacnet:device-name "IllustrativeAHU" ;
+    bacnet:object-identifier "binary-input,1" ;
+    bacnet:object-name "SF-S" ;
+    bacnet:object-type "binary-input" ;
+    bacnet:objectOf <bacnet://10001> ;
+    bacnet:property-identifier "present-value" ;
+    ref:BACnetURI "bacnet://10001/binary-input,1" .
+
+<bacnet://10001> a bacnet:BACnetDevice,
+        bacnet:Device,
+        bacnet2024:Device ;
+    rdfs:label "IllustrativeAHU" ;
+    bacnet:contains <bacnet://10001/analog-input,12>,
+        <bacnet://10001/analog-input,13>,
+        <bacnet://10001/analog-input,14>,
+        <bacnet://10001/analog-input,15>,
+        <bacnet://10001/analog-output,1>,
+        <bacnet://10001/analog-output,2>,
+        <bacnet://10001/analog-output,3>,
+        <bacnet://10001/analog-output,4>,
+        <bacnet://10001/analog-value,1>,
+        <bacnet://10001/binary-input,1> ;
+    bacnet:device-instance "10001"^^xsd:nonNegativeInteger ;
+    bacnet2024:contains <bacnet://10001/analog-input,12>,
+        <bacnet://10001/analog-input,13>,
+        <bacnet://10001/analog-input,14>,
+        <bacnet://10001/analog-input,15>,
+        <bacnet://10001/analog-output,1>,
+        <bacnet://10001/analog-output,2>,
+        <bacnet://10001/analog-output,3>,
+        <bacnet://10001/analog-output,4>,
+        <bacnet://10001/analog-value,1>,
+        <bacnet://10001/binary-input,1> ;
+    bacnet2024:device-instance "10001"^^xsd:nonNegativeInteger .
+

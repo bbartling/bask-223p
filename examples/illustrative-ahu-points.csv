@@ -1,0 +1,11 @@
+device_instance,device_name,object_type,object_instance,object_name,description,property_identifier,priority_for_writing,property_array_index,haystack_tags,brick_class,notes
+10001,IllustrativeAHU,analog-input,12,SAT,Illustrative: supply air temperature,present-value,,,point sensor temp,,illustrative fixture only; not a live site model
+10001,IllustrativeAHU,analog-input,13,RAT,Illustrative: return air temperature,present-value,,,point sensor temp,,illustrative fixture only; not a live site model
+10001,IllustrativeAHU,analog-input,14,MAT,Illustrative: mixed air temperature,present-value,,,point sensor temp,,illustrative fixture only; not a live site model
+10001,IllustrativeAHU,analog-input,15,OAT,Illustrative: outside air temperature,present-value,,,point sensor temp,,illustrative fixture only; not a live site model
+10001,IllustrativeAHU,binary-input,1,SF-S,Illustrative: supply fan status,present-value,,,point sensor,,illustrative fixture only; not a live site model
+10001,IllustrativeAHU,analog-output,1,SF-O,Illustrative: supply fan speed command,present-value,,,point cmd,,illustrative fixture only; not a live site model
+10001,IllustrativeAHU,analog-output,2,CHW-VLV,Illustrative: chilled-water valve command,present-value,,,point cmd,,illustrative fixture only; not a live site model
+10001,IllustrativeAHU,analog-output,3,HW-VLV,Illustrative: hot-water valve command,present-value,,,point cmd,,illustrative fixture only; not a live site model
+10001,IllustrativeAHU,analog-output,4,OA-DMPR,Illustrative: outdoor-air damper command,present-value,,,point cmd,,illustrative fixture only; not a live site model
+10001,IllustrativeAHU,analog-value,1,SAT-SP,Illustrative: supply air temperature setpoint,present-value,16,,point sp,,illustrative fixture only; not a live site model

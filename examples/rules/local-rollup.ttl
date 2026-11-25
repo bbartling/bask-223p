@@ -1,0 +1,14 @@
+@prefix oc: <https://example.org/bask-223p/v2#> .
+@prefix ex: <https://example.org/site-validation/> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+
+# Small, safe SHACL-AF demonstration: adds a derived relation to points
+# connected directly to an equipment node. It is NOT an ASHRAE 223 model.
+ex:EquipmentPointRule a sh:NodeShape ;
+  sh:targetClass oc:Equipment ;
+  sh:rule [
+    a sh:TripleRule ;
+    sh:subject sh:this ;
+    sh:predicate oc:hasDerivedPoint ;
+    sh:object [ sh:path oc:hasPoint ]
+  ] .

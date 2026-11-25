@@ -1,0 +1,8 @@
+@prefix oc: <https://example.org/bask-223p/v2#> .
+@prefix ex: <https://example.org/broken/> .
+ex:ahu-1 a oc:Equipment ; oc:hasPoint ex:bad-point .
+ex:bad-point a oc:Point, oc:AddressedPoint ;
+  oc:fqpn "LAB_Campus_B1650_HVAC_AHU-5_SA-T" ;
+  oc:device_instance 1005 ;
+  oc:object_type "analogInput" .
+# Intentionally missing pointName/object_instance/property_identifier.

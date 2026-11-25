@@ -1,0 +1,88 @@
+# Illustrative BACnet site-scan graph in the shape written by the BACpypes3
+# BACnet-to-RDF sample (samples/bacnet-rdf, bacnet/2024 vocabulary).
+# Synthetic devices 10001/10002/10003; addresses, MACs and live values omitted.
+@prefix bacnet: <http://data.ashrae.org/bacnet/2024#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+<bacnet://10001> a bacnet:Device ;
+    bacnet:device-instance "10001"^^xsd:nonNegativeInteger ;
+    bacnet:contains <bacnet://10001/device,10001>, <bacnet://10001/analog-input,1>,
+        <bacnet://10001/analog-value,1>, <bacnet://10001/binary-output,1>,
+        <bacnet://10001/analog-output,2>, <bacnet://10001/multi-state-value,3>,
+        <bacnet://10001/analog-value,99>, <bacnet://10001/file,1> .
+
+<bacnet://10001/device,10001> a bacnet:DeviceObject, bacnet:Object ;
+    bacnet:object-identifier "device,10001" ;
+    bacnet:object-name "LabAHU_01" ;
+    bacnet:object-type bacnet:ObjectType.device .
+
+<bacnet://10001/analog-input,1> a bacnet:AnalogInputObject, bacnet:Object ;
+    bacnet:object-identifier "analog-input,1" ;
+    bacnet:object-name "SA-T" ;
+    bacnet:description "Supply air temperature" ;
+    bacnet:object-type bacnet:ObjectType.analog-input ;
+    bacnet:units bacnet:EngineeringUnits.degrees-fahrenheit .
+
+<bacnet://10001/analog-value,1> a bacnet:AnalogValueObject, bacnet:Object ;
+    bacnet:object-identifier "analog-value,1" ;
+    bacnet:object-name "SAT_SP" ;
+    bacnet:object-type bacnet:ObjectType.analog-value ;
+    bacnet:units bacnet:EngineeringUnits.degrees-fahrenheit .
+
+<bacnet://10001/binary-output,1> a bacnet:BinaryOutputObject, bacnet:Object ;
+    bacnet:object-identifier "binary-output,1" ;
+    bacnet:object-name "FAN-CMD" ;
+    bacnet:object-type bacnet:ObjectType.binary-output .
+
+<bacnet://10001/analog-output,2> a bacnet:AnalogOutputObject, bacnet:Object ;
+    bacnet:object-identifier "analog-output,2" ;
+    bacnet:object-name "OA_Damper" ;
+    bacnet:object-type bacnet:ObjectType.analog-output ;
+    bacnet:units bacnet:EngineeringUnits.degrees-fahrenheit .
+
+<bacnet://10001/multi-state-value,3> a bacnet:MultistateValueObject, bacnet:Object ;
+    bacnet:object-identifier "multi-state-value,3" ;
+    bacnet:object-name "OCC-MODE" ;
+    bacnet:object-type bacnet:ObjectType.multi-state-value .
+
+<bacnet://10001/analog-value,99> a bacnet:AnalogValueObject, bacnet:Object ;
+    bacnet:object-identifier "analog-value,99" ;
+    bacnet:object-name "SPARE-AV-99" ;
+    bacnet:object-type bacnet:ObjectType.analog-value .
+
+<bacnet://10001/file,1> a bacnet:FileObject, bacnet:Object ;
+    bacnet:object-identifier "file,1" ;
+    bacnet:object-name "CONFIG" ;
+    bacnet:object-type bacnet:ObjectType.file .
+
+<bacnet://10002> a bacnet:Device ;
+    bacnet:device-instance "10002"^^xsd:nonNegativeInteger ;
+    bacnet:contains <bacnet://10002/device,10002>, <bacnet://10002/analog-input,5>, <bacnet://10002/analog-input,6> .
+
+<bacnet://10002/device,10002> a bacnet:DeviceObject, bacnet:Object ;
+    bacnet:object-identifier "device,10002" ;
+    bacnet:object-name "LabVAV_02" ;
+    bacnet:object-type bacnet:ObjectType.device .
+
+<bacnet://10002/analog-input,5> a bacnet:AnalogInputObject, bacnet:Object ;
+    bacnet:object-identifier "analog-input,5" ;
+    bacnet:object-name "ZN-T" ;
+    bacnet:object-type bacnet:ObjectType.analog-input ;
+    bacnet:units bacnet:EngineeringUnits.degrees-fahrenheit .
+
+<bacnet://10002/analog-input,6> a bacnet:AnalogInputObject, bacnet:Object ;
+    bacnet:object-identifier "analog-input,6" ;
+    bacnet:object-name "AIRFLOW" ;
+    bacnet:object-type bacnet:ObjectType.analog-input ;
+    bacnet:units bacnet:EngineeringUnits.cubic-feet-per-minute .
+
+<bacnet://10003> a bacnet:Device ;
+    bacnet:device-instance "10003"^^xsd:nonNegativeInteger ;
+    bacnet:contains <bacnet://10003/analog-input,1> .
+
+<bacnet://10003/analog-input,1> a bacnet:AnalogInputObject, bacnet:Object ;
+    bacnet:object-identifier "analog-input,1" ;
+    bacnet:object-name "RTU-SA-T" ;
+    bacnet:object-type bacnet:ObjectType.analog-input ;
+    bacnet:units bacnet:EngineeringUnits.degrees-fahrenheit .

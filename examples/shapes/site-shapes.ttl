@@ -1,0 +1,25 @@
+@prefix oc: <https://example.org/bask-223p/v2#> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix ex: <https://example.org/site-validation/> .
+
+# Local structural constraints, intentionally NOT a replacement for ASHRAE 223.
+ex:EquipmentShape a sh:NodeShape ;
+  sh:targetClass oc:Equipment ;
+  sh:or (
+    [ sh:property [ sh:path oc:hasPoint ; sh:minCount 1 ; sh:nodeKind sh:IRI ] ]
+    [ sh:property [ sh:path oc:hasSubEquipment ; sh:minCount 1 ; sh:nodeKind sh:IRI ] ]
+  ) .
+
+ex:PointShape a sh:NodeShape ;
+  sh:targetClass oc:Point ;
+  sh:property [ sh:path oc:pointName ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path oc:fqpn ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path [ sh:inversePath oc:hasPoint ]; sh:minCount 1 ] .
+
+ex:BacnetShape a sh:NodeShape ;
+  sh:targetClass oc:AddressedPoint ;
+  sh:property [ sh:path oc:device_instance ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:integer ; sh:minInclusive 0 ; sh:maxInclusive 4194303 ] ;
+  sh:property [ sh:path oc:object_instance ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:integer ; sh:minInclusive 0 ; sh:maxInclusive 4194303 ] ;
+  sh:property [ sh:path oc:object_type ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path oc:property_identifier ; sh:minCount 1 ; sh:maxCount 1 ] .

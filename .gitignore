@@ -1,0 +1,17 @@
+.venv/
+.pytest_cache/
+.ruff_cache/
+__pycache__/
+*.pyc
+*.egg-info/
+.ontoenv/
+
+# Local run artifacts and site data — never commit these
+outputs/
+inputs/
+ontology_cache/
+data_git_ignore_this/
+gap_reports/
+.secrets/
+*.env
+*.pem

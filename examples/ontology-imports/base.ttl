@@ -1,0 +1,7 @@
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix oc: <https://example.org/bask-223p/v2#> .
+@prefix ex: <https://example.org/fdd/validation/> .
+<https://example.org/fdd/validation/base> a owl:Ontology .
+ex:ImportedPointShape a sh:NodeShape ; sh:targetClass oc:Point ;
+  sh:property [sh:path oc:pointName ; sh:minCount 1] .

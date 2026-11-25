@@ -1,0 +1,205 @@
+{
+  "_kind": "grid",
+  "meta": {
+    "ver": "3.0"
+  },
+  "cols": [
+    {
+      "name": "id"
+    },
+    {
+      "name": "dis"
+    },
+    {
+      "name": "point"
+    },
+    {
+      "name": "bacnetCur"
+    },
+    {
+      "name": "tags"
+    }
+  ],
+  "rows": [
+    {
+      "id": "p:occupied-bv",
+      "dis": "occupied-bv",
+      "point": {
+        "_kind": "marker"
+      },
+      "bacnetCur": "bacnet://123456/binary-value,1",
+      "tags": "point"
+    },
+    {
+      "id": "p:Holiday-Calendar",
+      "dis": "Holiday-Calendar",
+      "point": {
+        "_kind": "marker"
+      },
+      "bacnetCur": "bacnet://123456/calendar,1",
+      "tags": "point"
+    },
+    {
+      "id": "p:Office-Hours-Schedule",
+      "dis": "Office-Hours-Schedule",
+      "point": {
+        "_kind": "marker"
+      },
+      "bacnetCur": "bacnet://123456/schedule,1",
+      "tags": "point"
+    },
+    {
+      "id": "p:DAP-P",
+      "dis": "DAP-P",
+      "point": {
+        "_kind": "marker"
+      },
+      "bacnetCur": "bacnet://3456789/analog-input,1",
+      "tags": "point pressure sensor"
+    },
+    {
+      "id": "p:SA-T",
+      "dis": "SA-T",
+      "point": {
+        "_kind": "marker"
+      },
+      "bacnetCur": "bacnet://3456789/analog-input,2",
+      "tags": "point sensor temp"
+    },
+    {
+      "id": "p:MA-T",
+      "dis": "MA-T",
+      "point": {
+        "_kind": "marker"
+      },
+      "bacnetCur": "bacnet://3456789/analog-input,3",
+      "tags": "point sensor temp"
+    },
+    {
+      "id": "p:RA-T",
+      "dis": "RA-T",
+      "point": {
+        "_kind": "marker"
+      },
+      "bacnetCur": "bacnet://3456789/analog-input,4",
+      "tags": "point sensor temp"
+    },
+    {
+      "id": "p:SA-FLOW",
+      "dis": "SA-FLOW",
+      "point": {
+        "_kind": "marker"
+      },
+      "bacnetCur": "bacnet://3456789/analog-input,5",
+      "tags": "flow point sensor"
+    },
+    {
+      "id": "p:OA-T",
+      "dis": "OA-T",
+      "point": {
+        "_kind": "marker"
+      },
+      "bacnetCur": "bacnet://3456789/analog-input,6",
+      "tags": "point sensor temp"
+    },
+    {
+      "id": "p:ELEC-PWR",
+      "dis": "ELEC-PWR",
+      "point": {
+        "_kind": "marker"
+      },
+      "bacnetCur": "bacnet://3456789/analog-input,7",
+      "tags": "point power sensor"
+    },
+    {
+      "id": "p:SF-O",
+      "dis": "SF-O",
+      "point": {
+        "_kind": "marker"
+      },
+      "bacnetCur": "bacnet://3456789/analog-output,1",
+      "tags": "cmd point"
+    },
+    {
+      "id": "p:HTG-O",
+      "dis": "HTG-O",
+      "point": {
+        "_kind": "marker"
+      },
+      "bacnetCur": "bacnet://3456789/analog-output,2",
+      "tags": "cmd point"
+    },
+    {
+      "id": "p:CLG-O",
+      "dis": "CLG-O",
+      "point": {
+        "_kind": "marker"
+      },
+      "bacnetCur": "bacnet://3456789/analog-output,3",
+      "tags": "cmd point"
+    },
+    {
+      "id": "p:DPR-O",
+      "dis": "DPR-O",
+      "point": {
+        "_kind": "marker"
+      },
+      "bacnetCur": "bacnet://3456789/analog-output,4",
+      "tags": "cmd point"
+    },
+    {
+      "id": "p:DAP-SP",
+      "dis": "DAP-SP",
+      "point": {
+        "_kind": "marker"
+      },
+      "bacnetCur": "bacnet://3456789/analog-value,1",
+      "tags": "point sp"
+    },
+    {
+      "id": "p:SAT-SP",
+      "dis": "SAT-SP",
+      "point": {
+        "_kind": "marker"
+      },
+      "bacnetCur": "bacnet://3456789/analog-value,2",
+      "tags": "point sp"
+    },
+    {
+      "id": "p:OAT-NETWORK",
+      "dis": "OAT-NETWORK",
+      "point": {
+        "_kind": "marker"
+      },
+      "bacnetCur": "bacnet://3456789/analog-value,3",
+      "tags": "point sensor temp"
+    },
+    {
+      "id": "p:SF-S",
+      "dis": "SF-S",
+      "point": {
+        "_kind": "marker"
+      },
+      "bacnetCur": "bacnet://3456789/binary-input,1",
+      "tags": "point sensor"
+    },
+    {
+      "id": "p:SF-C",
+      "dis": "SF-C",
+      "point": {
+        "_kind": "marker"
+      },
+      "bacnetCur": "bacnet://3456789/binary-output,1",
+      "tags": "cmd point"
+    },
+    {
+      "id": "p:Occ-Schedule",
+      "dis": "Occ-Schedule",
+      "point": {
+        "_kind": "marker"
+      },
+      "bacnetCur": "bacnet://3456789/multi-state-value,1",
+      "tags": "point"
+    }
+  ]
+}

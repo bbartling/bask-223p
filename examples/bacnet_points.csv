@@ -1,0 +1,5 @@
+FQPN,description,device_instance,object_type,object_instance,property_identifier
+LAB_Campus_B1650_HVAC_AHU-5_SA-T,AHU-5 supply air temperature,1005,analogInput,7,presentValue
+LAB_Campus_B1650_HVAC_AHU-5_OA-DMPR-C,AHU-5 outside air damper command,1005,analogOutput,12,presentValue
+LAB_Campus_B1650_HVAC_AHU-5_SA-T-SP,AHU-5 supply air temperature setpoint,1005,analogValue,22,presentValue
+LAB_East_B2001_HVAC_AHU-1_VAV-3_ZN-T,Zone air temperature,2401,analogInput,3,presentValue

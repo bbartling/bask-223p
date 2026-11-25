@@ -1,0 +1,804 @@
+"""Read-only baskStream client and Niagara discovery snapshot loader.
+
+Supports authenticated WebSocket (MessagePack) discovery against a Niagara 4
+station running BASkStreamService (or the ``bask demo`` simulator), plus offline
+recorded JSON snapshots. Only read-only operations are permitted; any attempt to
+send a write/mutation op raises ``ValueError``.
+
+Credentials are loaded from an env file or environment variables and are never
+printed, logged, or serialized into output artifacts.
+"""
+from __future__ import annotations
+
+import base64
+import hashlib
+import hmac
+import json
+import os
+import re
+import ssl
+import time
+import unicodedata
+import uuid
+from http.cookies import SimpleCookie
+from pathlib import Path
+from typing import Any
+from urllib.parse import quote, urlparse
+
+from .haystack import load_env_credentials
+from .refs import normalize_object_type, normalize_property_identifier
+
+READ_ONLY_OPS = frozenset({
+    "ping",
+    "capabilities",
+    "browse",
+    "describe",
+    "search",
+    "read",
+    "describe_component",
+    "describe_component_types",
+    "read_tags",
+    "read_history",
+    "read_history_rollup",
+    "read_alarms",
+    "read_schedule",
+    "read_schedule_events",
+    "resolve",
+    "query",
+})
+
+_BACNET_OBJ_RE = re.compile(r"^([A-Za-z0-9_-]+)[: ,]+([0-9]+)$")
+
+# Conservative Niagara unit display / facet token -> QUDT unit local name.
+QUDT_UNIT_MAP: dict[str, str] = {
+    "°f": "DEG_F",
+    "degf": "DEG_F",
+    "fahrenheit": "DEG_F",
+    "degreesfahrenheit": "DEG_F",
+    "°c": "DEG_C",
+    "degc": "DEG_C",
+    "celsius": "DEG_C",
+    "degreescelsius": "DEG_C",
+    "%": "PERCENT",
+    "percent": "PERCENT",
+    "%rh": "PERCENT_RH",
+    "percentrelativehumidity": "PERCENT_RH",
+    "inh2o": "IN_H2O",
+    "inh₂o": "IN_H2O",
+    "inchesofwater": "IN_H2O",
+    "cfm": "FT3-PER-MIN",
+    "cubicfeetperminute": "FT3-PER-MIN",
+    "psi": "PSI",
+    "poundsforcepersquareinch": "PSI",
+    "pa": "PA",
+    "pascals": "PA",
+    "kpa": "KiloPA",
+    "kw": "KiloW",
+    "kilowatts": "KiloW",
+    "kwh": "KiloW-HR",
+    "kilowatthours": "KiloW-HR",
+    "w": "W",
+    "watts": "W",
+    "hz": "HZ",
+    "hertz": "HZ",
+    "gpm": "GAL_US-PER-MIN",
+    "gallonsperminute": "GAL_US-PER-MIN",
+    "ppm": "PPM",
+    "partspermillion": "PPM",
+}
+
+
+class BaskStreamError(RuntimeError):
+    """Raised on Niagara SCRAM login, transport, or protocol errors."""
+
+
+def _prep_username(value: str) -> str:
+    return unicodedata.normalize("NFKC", str(value)).replace("=", "=3D").replace(",", "=2C")
+
+
+def _parse_scram(value: str) -> dict[str, str]:
+    out: dict[str, str] = {}
+    for part in value.split(","):
+        if "=" in part:
+            key, val = part.split("=", 1)
+            out[key] = val
+    return out
+
+
+def _xor_bytes(a: bytes, b: bytes) -> bytes:
+    return bytes(x ^ y for x, y in zip(a, b))
+
+
+def decode_n4_slot_text(text: str) -> str:
+    return re.sub(r"\$([0-9a-fA-F]{2})", lambda m: chr(int(m.group(1), 16)), text or "")
+
+
+def parse_bacnet_object_id(encoded: str | None) -> tuple[str, int] | None:
+    """Parse Niagara encoded BACnet objectId like ``analogInput:1173`` or ``device:5007``."""
+    raw = (encoded or "").strip()
+    if not raw:
+        return None
+    m = _BACNET_OBJ_RE.match(raw)
+    if not m:
+        return None
+    obj_type = normalize_object_type(m.group(1))
+    instance = int(m.group(2))
+    return obj_type, instance
+
+
+def parse_facets_string(encoded: str | None) -> dict[str, Any]:
+    """Parse Niagara ``units=u:°F|precision=i:1`` encoded facets strings."""
+    out: dict[str, Any] = {}
+    raw = (encoded or "").strip()
+    if not raw:
+        return out
+    for part in raw.split("|"):
+        if "=" not in part:
+            continue
+        k, v = part.split("=", 1)
+        k = k.strip()
+        v = v.strip()
+        if ":" in v and len(v.split(":", 1)[0]) <= 2:
+            prefix, val = v.split(":", 1)
+            if prefix == "i" and val.lstrip("-").isdigit():
+                out[k] = int(val)
+            elif prefix in {"d", "f"}:
+                try:
+                    out[k] = float(val)
+                except ValueError:
+                    out[k] = val
+            else:
+                out[k] = val
+        else:
+            out[k] = v
+    return out
+
+
+def map_qudt_unit(unit_text: str | None) -> str | None:
+    """Map a Niagara unit (symbol, name, or full BUnit encoding) to a QUDT unit local name.
+
+    Accepts ``°F``, ``fahrenheit``, or the encoded form ``fahrenheit;°F;(K)*1.8+-459.67``
+    that a ``describe_component`` facets slot carries. Unknown units return ``None``
+    (never guessed).
+    """
+    raw = (unit_text or "").strip()
+    if raw.startswith("u:"):
+        raw = raw[2:]
+    if not raw or raw.lower() in {"null", "none", "no-units", "nounits"}:
+        return None
+    for piece in [raw] + [p for p in raw.split(";")[:2] if p.strip()]:
+        piece = piece.strip()
+        key = re.sub(r"[\s_\-]+", "", piece.casefold())
+        hit = QUDT_UNIT_MAP.get(key) or QUDT_UNIT_MAP.get(piece.casefold())
+        if hit:
+            return hit
+    return None
+
+
+def coerce_facets(value: Any) -> dict[str, Any]:
+    """Normalize facets from any baskStream shape into a flat dict.
+
+    Real stations return ``metadata.facets`` as a map (``{"units": "°F", "precision": "1"}``,
+    enum ranges as option lists); ``describe_component`` slots carry the encoded string
+    (``units=u:°F|precision=i:1``). Unknown shapes yield ``{}``.
+    """
+    if isinstance(value, dict):
+        out: dict[str, Any] = {}
+        for k, v in value.items():
+            if isinstance(v, str) and v.lstrip("-").isdigit():
+                out[str(k)] = int(v)
+            else:
+                out[str(k)] = v
+        return out
+    if isinstance(value, str):
+        return parse_facets_string(value)
+    return {}
+
+
+class _CookieJar:
+    def __init__(self) -> None:
+        self._cookies: dict[str, str] = {}
+
+    def store(self, response: Any) -> None:
+        raw_values: list[str] = []
+        try:
+            raw_values.extend(response.raw.headers.getlist("Set-Cookie"))
+        except Exception:
+            pass
+        fallback = response.headers.get("Set-Cookie")
+        if fallback and fallback not in raw_values:
+            raw_values.append(fallback)
+        for raw in raw_values:
+            try:
+                parsed = SimpleCookie()
+                parsed.load(raw)
+                for name, morsel in parsed.items():
+                    self._cookies[name] = morsel.value
+            except Exception:
+                first = raw.split(";", 1)[0]
+                if "=" in first:
+                    name, value = first.split("=", 1)
+                    self._cookies[name.strip()] = value.strip()
+
+    def header(self) -> str:
+        return "; ".join(f"{k}={v}" for k, v in self._cookies.items())
+
+
+class ReadOnlyBaskStreamClient:
+    """Strictly read-only SCRAM-SHA-256 + MessagePack WebSocket client for baskStream."""
+
+    def __init__(
+        self,
+        station: str,
+        *,
+        insecure: bool = False,
+        timeout: int = 30,
+        send_auth_header: bool = False,
+        require_server_signature: bool = False,
+    ) -> None:
+        try:
+            import msgpack  # noqa: F401
+            import requests  # noqa: F401
+            import websocket  # noqa: F401
+        except ImportError as exc:
+            raise RuntimeError(
+                'Live baskStream support requires msgpack, websocket-client, and requests: '
+                'pip install "bask-223p[bask]"'
+            ) from exc
+        import requests
+
+        self.station = station.rstrip("/")
+        self.verify_tls = not insecure
+        self.timeout = timeout
+        self.send_auth_header = send_auth_header
+        self.require_server_signature = require_server_signature
+        self.server_signature_verified = False
+        self.session = requests.Session()
+        self.cookies = _CookieJar()
+        self.ws: Any = None
+        self.notices: list[dict[str, Any]] = []
+        self._auth_header: str | None = None
+        self.server_operations: set[str] | None = None
+        self.api_version: str | None = None
+
+    def _http(
+        self,
+        method: str,
+        path: str,
+        *,
+        body: str | bytes | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> Any:
+        req_headers = {
+            "User-Agent": "bask-223p/0.1",
+            "Accept": "*/*",
+        }
+        cookie = self.cookies.header()
+        if cookie:
+            req_headers["Cookie"] = cookie
+        if headers:
+            req_headers.update(headers)
+        resp = self.session.request(
+            method=method,
+            url=self.station + path,
+            data=body or b"",
+            headers=req_headers,
+            verify=self.verify_tls,
+            allow_redirects=False,
+            timeout=self.timeout,
+        )
+        self.cookies.store(resp)
+        return resp
+
+    def health(self) -> dict[str, Any] | None:
+        resp = self._http("GET", "/stream/health")
+        if resp.status_code == 200:
+            try:
+                return resp.json()
+            except Exception as exc:
+                raise BaskStreamError(f"/stream/health returned invalid JSON: {exc}") from exc
+        return None
+
+    def login(self, username: str, password: str) -> dict[str, Any]:
+        if self.send_auth_header:
+            tok = base64.b64encode(f"{username}:{password}".encode("utf-8")).decode("ascii")
+            self._auth_header = f"Basic {tok}"
+
+        already = self.health()
+        if already:
+            return already
+
+        self._http("GET", "/prelogin")
+        user_step = self._http(
+            "POST",
+            "/login",
+            body=f"j_username={quote(username)}",
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+        if user_step.status_code != 200 or "j_security_check" not in user_step.text:
+            raise BaskStreamError("Niagara username step failed (check user web access).")
+
+        nonce = base64.b64encode(os.urandom(16)).decode("ascii")
+        client_first_bare = f"n={_prep_username(username)},r={nonce}"
+        client_first = f"n,,{client_first_bare}"
+        first = self._http(
+            "POST",
+            "/j_security_check/",
+            body=f"action=sendClientFirstMessage&clientFirstMessage={client_first}",
+            headers={"Content-Type": "application/x-niagara-login-support"},
+        )
+        if first.status_code != 200:
+            raise BaskStreamError(f"SCRAM first message failed: HTTP {first.status_code}")
+
+        server_first = first.text.strip()
+        parsed = _parse_scram(server_first)
+        if not parsed.get("r", "").startswith(nonce) or not parsed.get("s") or not parsed.get("i"):
+            raise BaskStreamError("Invalid SCRAM server-first challenge")
+
+        salted = hashlib.pbkdf2_hmac(
+            "sha256",
+            unicodedata.normalize("NFKC", password).encode("utf-8"),
+            base64.b64decode(parsed["s"]),
+            int(parsed["i"]),
+            dklen=32,
+        )
+        client_final_no_proof = f"c=biws,r={parsed['r']}"
+        auth_msg = f"{client_first_bare},{server_first},{client_final_no_proof}".encode("utf-8")
+        client_key = hmac.new(salted, b"Client Key", hashlib.sha256).digest()
+        stored_key = hashlib.sha256(client_key).digest()
+        client_sig = hmac.new(stored_key, auth_msg, hashlib.sha256).digest()
+        proof_b64 = base64.b64encode(_xor_bytes(client_key, client_sig)).decode("ascii")
+
+        final = self._http(
+            "POST",
+            "/j_security_check/",
+            body=f"action=sendClientFinalMessage&clientFinalMessage={client_final_no_proof},p={proof_b64}",
+            headers={"Content-Type": "application/x-niagara-login-support"},
+        )
+        if final.status_code != 200:
+            raise BaskStreamError(f"SCRAM final message failed: HTTP {final.status_code}")
+
+        # Verify SCRAM ServerSignature when returned by the station.
+        final_parsed = _parse_scram(final.text.strip())
+        if "e" in final_parsed:
+            raise BaskStreamError(f"SCRAM server error: {final_parsed['e']}")
+        if "v" in final_parsed:
+            server_key = hmac.new(salted, b"Server Key", hashlib.sha256).digest()
+            expected_sig = base64.b64encode(hmac.new(server_key, auth_msg, hashlib.sha256).digest()).decode("ascii")
+            if not hmac.compare_digest(final_parsed["v"], expected_sig):
+                raise BaskStreamError("SCRAM server signature verification failed (possible impostor station)")
+            self.server_signature_verified = True
+        elif self.require_server_signature:
+            raise BaskStreamError("SCRAM server-final message carried no server signature (v=)")
+
+        self._http("GET", "/j_security_check/")
+        health = self.health()
+        if not health:
+            raise BaskStreamError("/stream/health did not return 200 after Niagara login")
+        return health
+
+    def connect(self) -> None:
+        import websocket
+
+        cookie_header = self.cookies.header()
+        if not cookie_header:
+            raise BaskStreamError("No Niagara session cookies available; call login() first.")
+        parsed = urlparse(self.station)
+        if parsed.scheme == "https":
+            ws_url = f"wss://{parsed.netloc}/stream"
+        elif parsed.scheme == "http":
+            ws_url = f"ws://{parsed.netloc}/stream"
+        else:
+            raise ValueError("Station URL must start with http:// or https://")
+        origin = f"{parsed.scheme}://{parsed.netloc}"
+        headers = [f"Cookie: {cookie_header}"]
+        if self._auth_header:
+            headers.append(f"Authorization: {self._auth_header}")
+        sslopt = (
+            {"cert_reqs": ssl.CERT_REQUIRED, "check_hostname": True}
+            if self.verify_tls
+            else {"cert_reqs": ssl.CERT_NONE, "check_hostname": False}
+        )
+        self.ws = websocket.create_connection(
+            ws_url,
+            header=headers,
+            origin=origin,
+            sslopt=sslopt,
+            timeout=self.timeout,
+        )
+
+    def close(self) -> None:
+        if self.ws is not None:
+            try:
+                self.ws.close()
+            finally:
+                self.ws = None
+        self.session.close()
+
+    def __enter__(self) -> "ReadOnlyBaskStreamClient":
+        return self
+
+    def __exit__(self, *exc_info: object) -> None:
+        self.close()
+
+    def call(self, op: str, **fields: Any) -> dict[str, Any]:
+        if op not in READ_ONLY_OPS:
+            raise ValueError(f"Write or unsupported operation forbidden in read-only client: {op!r}")
+        if self.ws is None:
+            raise BaskStreamError("WebSocket is not connected.")
+        import msgpack
+        import websocket
+
+        req_id = fields.pop("id", f"{op}-{uuid.uuid4().hex[:8]}")
+        frame: dict[str, Any] = {"op": op, "id": req_id}
+        frame.update(fields)
+        self.ws.send(msgpack.packb(frame, use_bin_type=True), opcode=websocket.ABNF.OPCODE_BINARY)
+
+        deadline = time.monotonic() + self.timeout
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise BaskStreamError(f"{op} timed out waiting for response id={req_id}")
+            self.ws.settimeout(remaining)
+            try:
+                raw = self.ws.recv()
+            except websocket.WebSocketTimeoutException as exc:
+                raise BaskStreamError(f"{op} timed out waiting for response id={req_id}") from exc
+            if isinstance(raw, str):
+                continue
+            msg = msgpack.unpackb(raw, raw=False)
+            if not isinstance(msg, dict):
+                continue
+            if msg.get("id") != req_id:
+                msg_op = msg.get("op")
+                if msg_op in {"session_revoked", "request_timeout"}:
+                    raise BaskStreamError(f"Server terminated session ({msg_op}): {msg.get('reason') or ''}")
+                self.notices.append(msg)
+                continue
+            if msg.get("error") or msg.get("op") == "error":
+                raise BaskStreamError(f"{op} failed: {msg.get('code') or 'error'}: {msg.get('message') or msg}")
+            return msg
+
+    def ping(self) -> dict[str, Any]:
+        return self.call("ping")
+
+    def capabilities(self) -> dict[str, Any]:
+        result = self.call("capabilities")
+        caps = result.get("capabilities") or {}
+        ops = caps.get("operations")
+        self.server_operations = set(ops) if isinstance(ops, list) and ops else None
+        self.api_version = str(caps.get("apiVersion") or "") or None
+        return result
+
+    def browse(self, base: str, *, depth: int = 1, metadata: str = "full") -> dict[str, Any]:
+        return self.call("browse", base=base, depth=depth, metadata=metadata)
+
+    def describe(self, ord_value: str, *, metadata: str = "full") -> dict[str, Any]:
+        return self.call("describe", ord=ord_value, metadata=metadata)
+
+    def describe_component(self, ord_value: str) -> dict[str, Any]:
+        return self.call("describe_component", ord=ord_value)
+
+    def search(
+        self,
+        base: str,
+        *,
+        query: str = "",
+        features: list[str] | None = None,
+        metadata: str = "full",
+        depth: int = 32,
+        limit: int = 1000,
+    ) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "base": base,
+            "query": query,
+            "depth": depth,
+            "metadata": metadata,
+            "limit": limit,
+        }
+        if features:
+            payload["features"] = features
+        return self.call("search", **payload)
+
+    def read(self, points: list[str]) -> dict[str, Any]:
+        return self.call("read", points=points)
+
+    def read_tags(
+        self, ords: str | list[str], *, dictionary: str | None = None, include_relations: bool = True
+    ) -> dict[str, Any]:
+        """``read_tags`` for one ORD or up to 100 ORDs (API 1.5+)."""
+        targets = [ords] if isinstance(ords, str) else list(ords)
+        if not targets or len(targets) > 100:
+            raise ValueError("read_tags takes 1..100 ORDs per request")
+        payload: dict[str, Any] = {"ords": targets, "includeRelations": include_relations}
+        if dictionary:
+            payload["dictionary"] = dictionary
+        return self.call("read_tags", **payload)
+
+    def resolve(self, equip: str, *, role: str | None = None, tags: list[str] | None = None) -> dict[str, Any]:
+        """API 1.14 ``resolve``: the station's inferred point for an equipment + role/tags.
+
+        The answer is a *suggestion* (``inferred: true``); callers must treat it as a
+        review candidate, never as an approved semantic binding.
+        """
+        if not role and not tags:
+            raise ValueError("resolve needs a role or tags")
+        self._require_op("resolve", "1.14")
+        payload: dict[str, Any] = {"equip": equip}
+        if role:
+            payload["role"] = role
+        if tags:
+            payload["tags"] = list(tags)
+        return self.call("resolve", **payload)
+
+    def supports(self, op: str) -> bool:
+        """True when the last ``capabilities`` answer listed ``op`` (unknown -> True)."""
+        ops = self.server_operations
+        return True if ops is None else op in ops
+
+    def _require_op(self, op: str, since: str) -> None:
+        """Fail early, without a round trip, for an op the station did not advertise."""
+        if getattr(self, "server_operations", None) is not None and op not in self.server_operations:
+            have = getattr(self, "api_version", None) or "unknown"
+            raise BaskStreamError(f"unsupported_op: {op} needs baskStream API {since}+ (station reports {have})")
+
+
+def _slots_map(comp_result: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    result = comp_result.get("result") if "result" in comp_result else comp_result
+    out: dict[str, dict[str, Any]] = {}
+    for slot in (result or {}).get("slots") or []:
+        name = slot.get("name")
+        if name:
+            out[str(name)] = slot
+    return out
+
+
+def _slot_encoded(slot: dict[str, Any] | None) -> str:
+    if not slot:
+        return ""
+    val = slot.get("value")
+    if isinstance(val, dict):
+        if "encoded" in val:
+            return str(val["encoded"])
+        if "value" in val:
+            return str(val["value"])
+    if val is None:
+        return ""
+    return str(val)
+
+
+def _extract_device_bacnet(client: ReadOnlyBaskStreamClient, device_ord: str) -> tuple[int | None, str]:
+    """BACnet device instance and BACnet device name (``objectName``), read-only.
+
+    Tries the device component, then ``config/deviceObject`` (where a Niagara
+    ``bacnet:BacnetDevice`` keeps the remote Device object's ``objectId`` and
+    ``objectName``). The Niagara display name is *not* returned as a BACnet name.
+    """
+    instance: int | None = None
+    bacnet_name = ""
+    for target in (device_ord, f"{device_ord}/config/deviceObject"):
+        try:
+            comp = client.describe_component(target)
+        except BaskStreamError:
+            continue
+        slots = _slots_map(comp)
+        if instance is None and "objectId" in slots:
+            parsed = parse_bacnet_object_id(_slot_encoded(slots["objectId"]))
+            if parsed and parsed[0] == "device":
+                instance = parsed[1]
+        if not bacnet_name and "objectName" in slots:
+            bacnet_name = _slot_encoded(slots["objectName"])
+        if instance is not None and bacnet_name:
+            break
+    return instance, bacnet_name
+
+
+def _extract_point_proxy_bacnet(
+    client: ReadOnlyBaskStreamClient, point_ord: str
+) -> dict[str, Any]:
+    """Read BACnet proxyExt objectId, propertyId, and write priority from point or proxyExt."""
+    info: dict[str, Any] = {}
+    for target in (f"{point_ord}/proxyExt", point_ord):
+        try:
+            comp = client.describe_component(target)
+        except BaskStreamError:
+            continue
+        slots = _slots_map(comp)
+        if "objectId" in slots and "object_id" not in info:
+            parsed = parse_bacnet_object_id(_slot_encoded(slots["objectId"]))
+            if parsed:
+                info["object_type"], info["object_instance"] = parsed
+                info["object_id"] = f"{parsed[0]},{parsed[1]}"
+        if "propertyId" in slots and "property_identifier" not in info:
+            raw_prop = _slot_encoded(slots["propertyId"])
+            if raw_prop:
+                info["property_identifier"] = normalize_property_identifier(raw_prop)
+        if "propertyArrayIndex" in slots and "property_array_index" not in info:
+            raw_idx = _slot_encoded(slots["propertyArrayIndex"])
+            if raw_idx.isdigit():
+                info["property_array_index"] = int(raw_idx)
+        if "writePriority" in slots and "priority_for_writing" not in info:
+            raw_pri = _slot_encoded(slots["writePriority"])
+            if raw_pri.isdigit() and 1 <= int(raw_pri) <= 16:
+                info["priority_for_writing"] = int(raw_pri)
+        if "facets" in slots and "facets_encoded" not in info:
+            info["facets_encoded"] = _slot_encoded(slots["facets"])
+    return info
+
+
+def _value_kind_from_node(node: dict[str, Any]) -> str:
+    meta = node.get("metadata") or {}
+    write_kind = str((meta.get("write") or {}).get("valueKind") or "").casefold()
+    if write_kind in {"numeric", "boolean", "enum", "string"}:
+        return write_kind
+    ts = str(node.get("typeSpec") or "").casefold()
+    if "numeric" in ts:
+        return "numeric"
+    if "boolean" in ts:
+        return "boolean"
+    if "enum" in ts:
+        return "enum"
+    return "numeric"
+
+
+def discover_station_snapshot(
+    station: str,
+    *,
+    base: str = "slot:/Drivers",
+    env_file: Path | None = None,
+    username: str | None = None,
+    password: str | None = None,
+    insecure: bool = False,
+    limit: int = 1000,
+    ws_auth_header: bool = False,
+    timeout: int = 30,
+) -> dict[str, Any]:
+    """Run read-only baskStream discovery and return a normalized JSON snapshot.
+
+    ``ws_auth_header`` sends an ``Authorization`` header on the WebSocket handshake,
+    needed when the service has ``requireAuthorizationHeader=true``.
+
+    The snapshot never includes credentials, cookies, or Authorization headers. It
+    records ``warnings`` (truncated searches, server notices, unbound points) so a
+    partial discovery is never silently treated as complete.
+    """
+    if not username or not password:
+        env_u, env_p = load_env_credentials(env_file)
+        username = username or env_u
+        password = password or env_p
+    if not username or not password:
+        raise ValueError("Station credentials required (provide --env-file or NIAGARA_USER/NIAGARA_PASS)")
+
+    warnings: list[str] = []
+    with ReadOnlyBaskStreamClient(
+        station, insecure=insecure, timeout=timeout, send_auth_header=ws_auth_header
+    ) as client:
+        health = client.login(username, password)
+        client.connect()
+        client.ping()
+        caps = (client.capabilities() or {}).get("capabilities") or {}
+
+        root_browse = (client.browse(base, depth=1, metadata="full") or {}).get("node") or {}
+        search_res = (client.search(base, metadata="full", limit=limit) or {}).get("result") or {}
+        all_nodes = search_res.get("nodes") or []
+        if search_res.get("truncated"):
+            warnings.append(
+                f"search under {base} truncated ({','.join(search_res.get('truncatedReasons') or []) or 'unknown'}); "
+                "raise --limit or narrow --slot-base"
+            )
+
+        device_nodes: list[dict[str, Any]] = []
+        seen_devs: set[str] = set()
+        for candidate in [root_browse] + list(root_browse.get("children") or []) + all_nodes:
+            ord_val = str(candidate.get("slotPath") or candidate.get("ord") or "")
+            if not ord_val or ord_val in seen_devs:
+                continue
+            ts = str(candidate.get("typeSpec") or "")
+            cls = ((candidate.get("metadata") or {}).get("classification") or {})
+            if cls.get("isDriverDevice") or ts.endswith("BacnetDevice"):
+                seen_devs.add(ord_val)
+                device_nodes.append(candidate)
+
+        devices_out: list[dict[str, Any]] = []
+        for dev in device_nodes:
+            dev_ord = str(dev.get("slotPath") or dev.get("ord") or "")
+            desc_node = (client.describe(dev_ord, metadata="full") or {}).get("node") or dev
+            dev_instance, dev_bacnet_name = _extract_device_bacnet(client, dev_ord)
+            dev_name = str(desc_node.get("display") or desc_node.get("name") or dev_ord.rsplit("/", 1)[-1])
+
+            pt_search = (client.search(dev_ord, features=["point"], metadata="full", limit=limit) or {}).get("result") or {}
+            pt_nodes = pt_search.get("nodes") or []
+            if pt_search.get("truncated"):
+                warnings.append(f"point search under {dev_ord} truncated")
+
+            points_out: list[dict[str, Any]] = []
+            for pt in pt_nodes:
+                pt_ord = str(pt.get("slotPath") or pt.get("ord") or "")
+                if not pt_ord:
+                    continue
+                if "metadata" not in pt:
+                    pt = (client.describe(pt_ord, metadata="full") or {}).get("node") or pt
+                meta = pt.get("metadata") or {}
+                pt_meta = meta.get("point") or {}
+                facets = coerce_facets(meta.get("facets") or pt_meta.get("facets"))
+                proxy = _extract_point_proxy_bacnet(client, pt_ord)
+                if not facets and proxy.get("facets_encoded"):
+                    facets = parse_facets_string(proxy["facets_encoded"])
+
+                writable = bool(pt.get("writable") or pt_meta.get("writable"))
+                active_ord = pt_meta.get("activeLevelOrdinal")
+                write_pri = proxy.get("priority_for_writing")
+                if write_pri is None and writable and isinstance(active_ord, int) and 1 <= active_ord <= 16:
+                    write_pri = active_ord
+
+                tags_raw = meta.get("tags") or []
+                hs_tags: list[str] = []
+                for t in tags_raw:
+                    tid = str(t.get("id") or "")
+                    if tid.startswith("hs:"):
+                        hs_tags.append(tid.split(":", 1)[1])
+
+                pt_entry: dict[str, Any] = {
+                    "ord": pt_ord,
+                    "name": str(pt.get("name") or ""),
+                    "display": str(pt.get("display") or pt.get("name") or ""),
+                    "typeSpec": str(pt.get("typeSpec") or ""),
+                    "valueKind": _value_kind_from_node(pt),
+                    "writable": writable,
+                    "facets": facets,
+                    "haystackTags": sorted(set(hs_tags)),
+                    "tags": tags_raw,
+                }
+                if "object_type" in proxy and "object_instance" in proxy:
+                    pt_entry["bacnet"] = {
+                        "object_type": proxy["object_type"],
+                        "object_instance": proxy["object_instance"],
+                        "object_identifier": proxy["object_id"],
+                        "property_identifier": proxy.get("property_identifier", "present-value"),
+                    }
+                    if "property_array_index" in proxy:
+                        pt_entry["bacnet"]["property_array_index"] = proxy["property_array_index"]
+                    if write_pri is not None:
+                        pt_entry["bacnet"]["priority_for_writing"] = write_pri
+                elif write_pri is not None:
+                    pt_entry["priority_for_writing"] = write_pri
+                points_out.append(pt_entry)
+
+            devices_out.append({
+                "ord": dev_ord,
+                "name": dev_name,
+                "typeSpec": str(desc_node.get("typeSpec") or ""),
+                "device_instance": dev_instance,
+                "bacnet_device_name": dev_bacnet_name,
+                "tags": (desc_node.get("metadata") or {}).get("tags") or [],
+                "points": points_out,
+            })
+
+        sig_verified = bool(getattr(client, "server_signature_verified", False))
+        for notice in getattr(client, "notices", None) or []:
+            warnings.append(f"server notice: {notice.get('op')} {notice.get('reason') or ''}".strip())
+
+    unbound = sum(1 for d in devices_out for p in d["points"] if "bacnet" not in p)
+    if unbound:
+        warnings.append(f"{unbound} point(s) have no BACnet proxyExt objectId (left unbound)")
+    return {
+        "format": "baskstream-discovery-snapshot",
+        "version": 1,
+        "station": station,
+        "base": base,
+        "apiVersion": str(caps.get("apiVersion") or health.get("apiVersion") or ""),
+        "module": str(caps.get("module") or "baskStream"),
+        "writesEnabled": caps.get("writesEnabled"),
+        "scramServerSignatureVerified": sig_verified,
+        "warnings": warnings,
+        "devices": devices_out,
+    }
+
+
+def load_baskstream_snapshot(path: Path) -> dict[str, Any]:
+    if not path.is_file():
+        raise FileNotFoundError(path)
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict) or not isinstance(payload.get("devices"), list):
+        raise ValueError(f"{path} is not a baskstream-discovery-snapshot JSON (expected 'devices' list)")
+    return payload

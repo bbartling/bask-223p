@@ -1,0 +1,3 @@
+FQPN,ClassURI,Status
+LAB_Campus_B1650_HVAC_AHU-5_SA-T,https://example.org/reviewed/SupplyAirTemperaturePoint,review
+LAB_Campus_B1650_HVAC_AHU-5_OA-DMPR-C,https://example.org/reviewed/DamperCommandPoint,review

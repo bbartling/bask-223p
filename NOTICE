@@ -1,0 +1,25 @@
+bask-223p
+Copyright 2026 Ben Bartling
+
+Licensed under the Apache License, Version 2.0.
+
+This project is a read-only client and exporter. It talks to the baskStream
+Niagara module over an authenticated WebSocket and writes ASHRAE 223P
+BACnetExternalReference data (and Brick ref:BACnetReference) as Turtle.
+
+Credits
+-------
+* baskStream, developed by BASidekick / QA Graphics, licensed separately
+  under Apache-2.0: https://github.com/rbhans/bask-stream
+  https://www.qagraphics.com/
+* The BACnet external-reference fields follow ASHRAE 223P (2nd public review
+  draft, section 11.18.1). The bacnet://<device>/<type>,<instance> URI shape
+  matches the BACpypes3 BACnet-to-RDF sample layout (samples/bacnet-rdf).
+
+This project is not affiliated with, endorsed by, or certified by ASHRAE,
+Tridium, Honeywell, or QA Graphics. Niagara Framework is a trademark of its
+owners and is not included or licensed here. Users need their own valid
+Niagara license to run a station.
+
+Bundled example ontologies in examples/ontology-imports/, if any, retain
+their upstream licenses.
