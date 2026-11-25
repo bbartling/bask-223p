@@ -35,6 +35,9 @@ READ_ONLY_OPS = frozenset({
     "describe",
     "search",
     "read",
+    "subscribe",
+    "unsubscribe",
+    "subscription_status",
     "describe_component",
     "describe_component_types",
     "read_tags",
@@ -257,6 +260,7 @@ class ReadOnlyBaskStreamClient:
         self.cookies = _CookieJar()
         self.ws: Any = None
         self.notices: list[dict[str, Any]] = []
+        self.cov_events: list[dict[str, Any]] = []
         self._auth_header: str | None = None
         self.server_operations: set[str] | None = None
         self.api_version: str | None = None
@@ -483,7 +487,10 @@ class ReadOnlyBaskStreamClient:
                 msg_op = msg.get("op")
                 if msg_op in {"session_revoked", "request_timeout"}:
                     raise BaskStreamError(f"Server terminated session ({msg_op}): {msg.get('reason') or ''}")
-                self.notices.append(msg)
+                if msg_op == "cov":
+                    self.cov_events.append(msg)
+                else:
+                    self.notices.append(msg)
                 continue
             if msg.get("error") or msg.get("op") == "error":
                 raise BaskStreamError(f"{op} failed: {msg.get('code') or 'error'}: {msg.get('message') or msg}")
@@ -532,6 +539,47 @@ class ReadOnlyBaskStreamClient:
 
     def read(self, points: list[str]) -> dict[str, Any]:
         return self.call("read", points=points)
+
+    def subscribe(self, points: list[str]) -> dict[str, Any]:
+        """Subscribe to read-only COV point updates (API 1.12+)."""
+        return self.call("subscribe", points=list(points))
+
+    def unsubscribe(self, points: list[str] | None = None) -> dict[str, Any]:
+        """Unsubscribe from COV updates for specific points or all points."""
+        if points is None:
+            return self.call("unsubscribe")
+        return self.call("unsubscribe", points=list(points))
+
+    def subscription_status(self) -> dict[str, Any]:
+        """Return active COV subscription count and limits."""
+        return self.call("subscription_status")
+
+    def recv_event(self, *, timeout: float | None = None) -> dict[str, Any] | None:
+        """Wait for the next unsolicited COV frame or server notice, or None on timeout."""
+        if self.cov_events:
+            return self.cov_events.pop(0)
+        if self.ws is None:
+            raise BaskStreamError("WebSocket is not connected.")
+        import msgpack
+        import websocket
+
+        wait_s = self.timeout if timeout is None else timeout
+        self.ws.settimeout(wait_s)
+        try:
+            raw = self.ws.recv()
+        except websocket.WebSocketTimeoutException:
+            return None
+        if isinstance(raw, str):
+            return None
+        msg = msgpack.unpackb(raw, raw=False)
+        if not isinstance(msg, dict):
+            return None
+        msg_op = msg.get("op")
+        if msg_op in {"session_revoked", "request_timeout"}:
+            raise BaskStreamError(f"Server terminated session ({msg_op}): {msg.get('reason') or ''}")
+        if msg_op != "cov":
+            self.notices.append(msg)
+        return msg
 
     def read_tags(
         self, ords: str | list[str], *, dictionary: str | None = None, include_relations: bool = True

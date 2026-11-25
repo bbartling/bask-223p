@@ -45,7 +45,8 @@ OPS_ADDED_AFTER_1_12 = {"resolve", "explain_change", "list_changes", "revert_cha
 WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 
 READ_OPS = [
-    "ping", "capabilities", "browse", "describe", "search", "read", "read_tags",
+    "ping", "capabilities", "browse", "describe", "search", "read",
+    "subscribe", "unsubscribe", "subscription_status", "read_tags",
     "describe_component", "describe_component_types", "read_schedule", "read_history",
     "read_alarms", "resolve", "query",
 ]
@@ -165,6 +166,8 @@ class StationState:
     received_ops: list[str] = field(default_factory=list)
     write_attempts: list[dict[str, Any]] = field(default_factory=list)
     ws_handshake_headers: list[dict[str, str]] = field(default_factory=list)
+    cov_on_subscribe: bool = False
+    subscriptions: list[str] = field(default_factory=list)
     lock: threading.Lock = field(default_factory=threading.Lock)
 
     def has_op(self, op: str) -> bool:
@@ -532,7 +535,30 @@ def _make_handler(state: StationState):
                     return
                 if state.silent_on == op:
                     continue
-                self._push(self._dispatch(op, rid, req, user))
+                resp = self._dispatch(op, rid, req, user)
+                self._push(resp)
+                if op == "subscribe" and state.cov_on_subscribe:
+                    cov_pts = [
+                        {
+                            "point": pt["point"],
+                            "value": pt["value"],
+                            "displayValue": pt["displayValue"],
+                            "status": pt["status"],
+                            "valueType": pt["valueType"],
+                            "timestamp": pt["timestamp"],
+                        }
+                        for pt in resp.get("points", [])
+                        if pt.get("ok")
+                    ]
+                    if cov_pts:
+                        self._push({
+                            "op": "cov",
+                            "sequence": 1,
+                            "timestamp": int(time.time() * 1000),
+                            "batched": len(cov_pts) > 1,
+                            "sourceEvents": len(cov_pts),
+                            "points": cov_pts,
+                        })
 
         def _error(self, rid: Any, code: str, message: str) -> dict[str, Any]:
             return {"op": "error", "id": rid, "code": code, "message": message}
@@ -605,6 +631,35 @@ def _make_handler(state: StationState):
                                     "status": "{ok}", "valueType": p["typeSpec"],
                                     "timestamp": int(time.time() * 1000)})
                 return {"op": "read_result", "id": rid, "points": pts}
+            if op == "subscribe":
+                pts = []
+                index = {state.point_ord(d, p): p for d, _dd, p in state.iter_points()}
+                for o in req.get("points") or []:
+                    p = index.get(o)
+                    if p is None:
+                        pts.append({"point": o, "ok": False, "error": "invalid_point"})
+                    else:
+                        if o not in state.subscriptions:
+                            state.subscriptions.append(o)
+                        pts.append({"point": o, "ok": True, "subscribed": True, "value": p["value"],
+                                    "displayValue": p["displayValue"] or str(p["value"]),
+                                    "status": "{ok}", "valueType": p["typeSpec"],
+                                    "timestamp": int(time.time() * 1000)})
+                return {"op": "subscribed", "id": rid, "points": pts}
+            if op == "unsubscribe":
+                req_pts = req.get("points")
+                if req_pts is None:
+                    removed = list(state.subscriptions)
+                    state.subscriptions.clear()
+                else:
+                    removed = [o for o in req_pts if o in state.subscriptions]
+                    state.subscriptions[:] = [o for o in state.subscriptions if o not in set(req_pts)]
+                return {"op": "unsubscribed", "id": rid,
+                        "points": [{"point": o, "ok": True} for o in removed]}
+            if op == "subscription_status":
+                return {"op": "subscription_status_result", "id": rid,
+                        "subscribedCount": len(state.subscriptions),
+                        "points": list(state.subscriptions)}
             if op == "read_tags":
                 ords = req.get("ords") or ([req["ord"]] if req.get("ord") else [])
                 targets = []

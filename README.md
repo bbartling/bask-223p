@@ -187,6 +187,11 @@ python -m bask_223p validate --data examples/broken-site.ttl --shapes examples/s
 
 Exit codes: 0 ok, 1 non-conformance / strict mismatch, 2 bad input or setup error.
 
+## 6. Examples: live telemetry ingest and SPARQL playground
+
+* [`examples/live-ingest/`](examples/live-ingest/README.md) — unified read-only FastAPI service and CLI (`--source baskstream | bacnet | both`) that pairs a `pyoxigraph` SPARQL + `OntoEnv`/`Shifty` (`pyshacl` fallback) RDF layer with a local **DuckDB** (`telemetry` keyed by `bacnet://` ref) and **CSV** time-series sink, a `/playground` SPARQL + DuckDB SQL UI, WebSocket `/live`, an Open-FDD DuckDB SQL fault prototype notebook, and `niagara` / `bacnet` Docker Compose profiles.
+* [`examples/sparql-playground/`](examples/sparql-playground/README.md) — self-contained Brick + SPARQL + SQLite tutorial API (`brickts`), lessons, `.rq` query library, sample building dataset, and Docker setup (archived from `bbartling/sparql-playground`).
+
 ## Package layout
 
 | Package | Role |

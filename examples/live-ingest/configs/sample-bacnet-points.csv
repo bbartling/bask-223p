@@ -1,0 +1,5 @@
+site,device,object,property,units,label
+demo-lab,10001,"analog-input,1",present-value,DEG_F,SA_Temp
+demo-lab,10001,"analog-value,1",present-value,DEG_F,SAT_SP
+demo-lab,10001,"binary-output,1",present-value,,Fan_Cmd
+demo-lab,10002,"analog-input,5",present-value,DEG_F,ZN_T

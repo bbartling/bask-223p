@@ -15,3 +15,11 @@ gap_reports/
 .secrets/
 *.env
 *.pem
+
+# Live-ingest & sparql-playground local databases/runtime state
+var/
+*.duckdb
+*.duckdb.wal
+*.sqlite
+*.sqlite3
+*.sqlite-journal

@@ -1,0 +1,19 @@
+site: demo-lab
+source: baskstream
+interval_s: 15
+baskstream:
+  station: https://localhost
+  base: slot:/Drivers/BacnetNetwork
+points:
+  - device: "54545"
+    object: "analog-value,1"
+    property: present-value
+    units: DEG_F
+    label: OA_Temp
+    ord: "slot:/Drivers/BacnetNetwork/WeatherStation/points/WEB_OA_T"
+  - device: "5007"
+    object: "analog-input,1173"
+    property: present-value
+    units: DEG_F
+    label: Bench_OA_Temp
+    ord: "slot:/Drivers/BacnetNetwork/BenchController/points/OA_T"

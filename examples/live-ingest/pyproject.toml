@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=75", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "live-ingest"
+version = "0.1.0"
+description = "Reference phase-2 live BACnet/baskStream ingest service with FastAPI, pyoxigraph SPARQL, OntoEnv/Shifty, and DuckDB"
+requires-python = ">=3.14"
+dependencies = [
+    "fastapi==0.165.0",
+    "uvicorn[standard]==0.54.0",
+    "pydantic==2.14.4",
+    "duckdb==2.0.1",
+    "tzdata==2026.6",
+    "bacpypes3==0.1.0",
+    "rdflib==7.6.0",
+    "pyoxigraph==0.5.13",
+    "ontoenv==0.6.4",
+    "pyshifty==0.6.0",
+    "pyshacl==0.40.2",
+    "pyyaml==6.0.4",
+    "msgpack==1.2.4",
+    "websocket-client==1.9.2",
+    "requests==2.34.2",
+    "python-multipart==0.0.34",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest==9.2.0",
+    "httpx==0.28.1",
+]
+
+[project.scripts]
+live-ingest = "live_ingest.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["live_ingest*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"

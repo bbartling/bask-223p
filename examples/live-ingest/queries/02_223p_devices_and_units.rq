@@ -1,0 +1,12 @@
+PREFIX s223: <http://data.ashrae.org/standard223#>
+PREFIX bacnet: <http://data.ashrae.org/bacnet/2020#>
+PREFIX ref: <https://brickschema.org/schema/Brick/ref#>
+PREFIX qudt: <http://qudt.org/schema/qudt/>
+
+SELECT ?deviceId ?unit (COUNT(DISTINCT ?point) AS ?pointCount) WHERE {
+  ?point s223:hasExternalReference ?extRef .
+  ?extRef bacnet:device-identifier ?deviceId .
+  OPTIONAL { ?point qudt:hasUnit ?unit }
+}
+GROUP BY ?deviceId ?unit
+ORDER BY ?deviceId ?unit

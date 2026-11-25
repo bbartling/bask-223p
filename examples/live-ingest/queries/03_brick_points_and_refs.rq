@@ -1,0 +1,12 @@
+PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX ref: <https://brickschema.org/schema/Brick/ref#>
+PREFIX s223: <http://data.ashrae.org/standard223#>
+
+SELECT DISTINCT ?point ?type ?label ?ref WHERE {
+  { ?point s223:hasExternalReference ?r } UNION { ?point ref:hasExternalReference ?r }
+  ?r ref:BACnetURI ?ref .
+  OPTIONAL { ?point rdfs:label ?label }
+  OPTIONAL { ?point rdf:type ?type }
+}
+ORDER BY ?ref ?type

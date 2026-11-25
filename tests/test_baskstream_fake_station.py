@@ -282,3 +282,24 @@ def test_api_1_12_resolve_is_gated_on_capabilities():
         with pytest.raises(BaskStreamError, match=r"resolve needs baskStream API 1\.14\+ \(station reports 1\.12\)"):
             c.resolve("slot:/Drivers/BacnetNetwork/LabAHU_01", role="discharge-air-temp")
         assert len(st.state.received_ops) == sent  # refused locally, nothing sent
+
+
+def test_subscribe_cov_and_unsubscribe():
+    pt = f"{AHU}/points/SA_Temp"
+    with FakeBaskStreamStation(cov_on_subscribe=True) as st, _client(st) as c:
+        sub = c.subscribe([pt])
+        assert sub["op"] == "subscribed"
+        assert sub["points"][0]["ok"] is True
+        assert sub["points"][0]["value"] == pytest.approx(55.2)
+
+        evt = c.recv_event(timeout=2.0)
+        assert evt is not None and evt["op"] == "cov"
+        assert evt["points"][0]["point"] == pt
+
+        status = c.subscription_status()
+        assert status["subscribedCount"] == 1
+
+        unsub = c.unsubscribe([pt])
+        assert unsub["op"] == "unsubscribed"
+        assert c.subscription_status()["subscribedCount"] == 0
+        assert c.recv_event(timeout=0.05) is None

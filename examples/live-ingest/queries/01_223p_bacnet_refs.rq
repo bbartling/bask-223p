@@ -1,0 +1,15 @@
+PREFIX s223: <http://data.ashrae.org/standard223#>
+PREFIX bacnet: <http://data.ashrae.org/bacnet/2020#>
+PREFIX ref: <https://brickschema.org/schema/Brick/ref#>
+PREFIX qudt: <http://qudt.org/schema/qudt/>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+
+SELECT ?point ?label ?ref ?deviceId ?objectId ?unit WHERE {
+  ?point s223:hasExternalReference ?extRef .
+  ?extRef ref:BACnetURI ?ref .
+  OPTIONAL { ?point rdfs:label ?label }
+  OPTIONAL { ?extRef bacnet:device-identifier ?deviceId }
+  OPTIONAL { ?extRef bacnet:object-identifier ?objectId }
+  OPTIONAL { ?point qudt:hasUnit ?unit }
+}
+ORDER BY ?ref

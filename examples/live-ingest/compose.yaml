@@ -1,0 +1,64 @@
+services:
+  live-ingest-niagara:
+    profiles: ["niagara"]
+    build:
+      context: ../..
+      dockerfile: examples/live-ingest/Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      NIAGARA_USER: ${NIAGARA_USER:-bask-reader}
+      NIAGARA_PASS: ${NIAGARA_PASS:-changeme}
+    volumes:
+      - ./configs:/app/examples/live-ingest/configs:ro
+      - live-ingest-var:/app/examples/live-ingest/var
+    command:
+      - "--source"
+      - "baskstream"
+      - "--station"
+      - "${BASK_STATION_URL:-https://host.docker.internal}"
+      - "--insecure"
+      - "--base"
+      - "${BASK_BASE_ORD:-slot:/Drivers/BacnetNetwork}"
+      - "--points"
+      - "/app/examples/illustrative-ahu-refs.ttl"
+      - "--duckdb"
+      - "/app/examples/live-ingest/var/live_ingest.duckdb"
+      - "--csv"
+      - "/app/examples/live-ingest/var/live_ingest.csv"
+      - "--serve"
+      - "--host"
+      - "0.0.0.0"
+      - "--port"
+      - "8080"
+
+  live-ingest-bacnet:
+    profiles: ["bacnet"]
+    build:
+      context: ../..
+      dockerfile: examples/live-ingest/Dockerfile
+    network_mode: host
+    volumes:
+      - ./configs:/app/examples/live-ingest/configs:ro
+      - live-ingest-var:/app/examples/live-ingest/var
+    command:
+      - "--source"
+      - "bacnet"
+      - "--points"
+      - "/app/examples/bench-scan.ttl"
+      - "--local-address"
+      - "${BACNET_LOCAL_ADDRESS:-0.0.0.0}"
+      - "--max-props"
+      - "25"
+      - "--duckdb"
+      - "/app/examples/live-ingest/var/live_ingest.duckdb"
+      - "--csv"
+      - "/app/examples/live-ingest/var/live_ingest.csv"
+      - "--serve"
+      - "--host"
+      - "0.0.0.0"
+      - "--port"
+      - "8080"
+
+volumes:
+  live-ingest-var:
