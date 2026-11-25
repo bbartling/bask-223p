@@ -107,8 +107,16 @@
       });
     }
 
+    let authHeaders = {};
+
+    async function loadAuthHeaders() {
+      const tok = await fetch('/auth/ws-token', { credentials: 'include' }).then(r => r.json());
+      authHeaders = { Authorization: `Bearer ${tok.access_token}` };
+      return authHeaders;
+    }
+
     async function refreshRules() {
-      const res = await fetch('/rules');
+      const res = await fetch('/rules', { headers: authHeaders });
       const body = await res.json();
       faultRows.innerHTML = '';
       const faultsByRef = new Map();
@@ -134,13 +142,15 @@
     }
 
     async function bootstrap() {
+      await loadAuthHeaders();
       const health = await fetch('/health').then(r => r.json());
       meta.textContent = `${health.source} · ${health.latest_count} points · ws`;
-      const latest = await fetch('/latest').then(r => r.json());
+      const latest = await fetch('/latest', { headers: authHeaders }).then(r => r.json());
       const faultsByRef = await refreshRules();
       (latest.samples || []).forEach(s => upsertSample(s, faultsByRef));
       const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-      const ws = new WebSocket(`${proto}://${location.host}/live`);
+      const wsTok = (await fetch('/auth/ws-token', { credentials: 'include' }).then(r => r.json())).access_token;
+      const ws = new WebSocket(`${proto}://${location.host}/live?token=${encodeURIComponent(wsTok)}`);
       ws.onmessage = (ev) => {
         const msg = JSON.parse(ev.data);
         const batch = msg.samples || [];

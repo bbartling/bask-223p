@@ -9,11 +9,19 @@ from edge_microdot.fdd import FddEngine
 from edge_microdot.history_store import HistoryStore
 from edge_microdot.models import PointTarget
 from edge_microdot.sources.fake import FakePollSource
+from edge_microdot.security import load_auth_from_env
 from edge_microdot.sparql_kb import SparqlKb
 
 
+def _auth_disabled():
+    auth = load_auth_from_env()
+    auth.disabled = True
+    return auth
+
+
 @pytest.fixture
-def edge_app(tmp_path):
+def edge_app(tmp_path, monkeypatch):
+    monkeypatch.setenv("EDGE_AUTH_DISABLED", "1")
     targets = [
         PointTarget(site="demo", device="10001", object_id=f"analog-input,{i}", units="C")
         for i in range(1, 6)
@@ -31,6 +39,7 @@ def edge_app(tmp_path):
         history=history,
         fdd=fdd,
         sparql=SparqlKb(None),
+        auth=_auth_disabled(),
         site="demo",
         poll_interval_s=3600,
         flush_interval_s=3600,

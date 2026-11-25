@@ -13,6 +13,9 @@ services:
       EDGE_DB_PATH: /app/examples/edge-microdot/var/edge_history.duckdb
       EDGE_DB_MAX_MB: "${EDGE_DB_MAX_MB:-100}"
       EDGE_ENABLE_SPARQL: "${EDGE_ENABLE_SPARQL:-0}"
+      EDGE_SECRET_KEY: "${EDGE_SECRET_KEY:-}"
+      EDGE_USERS: "${EDGE_USERS:-}"
+      EDGE_TOKEN_TTL: "${EDGE_TOKEN_TTL:-3600}"
       EDGE_BACNET_ADDRESS: "${EDGE_BACNET_ADDRESS:-}"
       EDGE_BACNET_DEVICES: "${EDGE_BACNET_DEVICES:-54545,5007}"
     volumes:
@@ -51,6 +54,9 @@ services:
       EDGE_DB_PATH: /app/examples/edge-microdot/var/edge_history.duckdb
       EDGE_DB_MAX_MB: "${EDGE_DB_MAX_MB:-100}"
       EDGE_ENABLE_SPARQL: "${EDGE_ENABLE_SPARQL:-0}"
+      EDGE_SECRET_KEY: "${EDGE_SECRET_KEY:-}"
+      EDGE_USERS: "${EDGE_USERS:-}"
+      EDGE_TOKEN_TTL: "${EDGE_TOKEN_TTL:-3600}"
       BASK_BASE_ORD: "${BASK_BASE_ORD:-slot:/Drivers}"
     volumes:
       - ./var:/app/examples/edge-microdot/var

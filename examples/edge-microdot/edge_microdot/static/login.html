@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>edge-microdot login</title>
+  <style>
+    body { font-family: system-ui, sans-serif; background: #0b0f14; color: #e8eef6; display: grid; place-items: center; min-height: 100vh; margin: 0; }
+    form { background: #141b24; padding: 2rem; border-radius: 12px; border: 1px solid #243041; width: min(360px, 90vw); }
+    label { display: block; margin: 0.75rem 0 0.25rem; font-size: 0.85rem; color: #8b9bb0; }
+    input { width: 100%; padding: 0.5rem; border-radius: 6px; border: 1px solid #243041; background: #0b0f14; color: inherit; }
+    button { margin-top: 1.25rem; width: 100%; padding: 0.6rem; border: 0; border-radius: 8px; background: #3dd6c3; color: #042; font-weight: 600; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <form method="post" action="/login">
+    <h1 style="margin:0 0 1rem;font-size:1.1rem;">Sign in</h1>
+    <label for="username">Username</label>
+    <input id="username" name="username" autocomplete="username" required />
+    <label for="password">Password</label>
+    <input id="password" name="password" type="password" autocomplete="current-password" required />
+    <button type="submit">Continue</button>
+  </form>
+</body>
+</html>

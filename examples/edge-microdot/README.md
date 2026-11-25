@@ -47,7 +47,7 @@ Host networking exposes UDP **47808**.
 ```bash
 git clone <repo> && cd <repo>/examples/edge-microdot
 cp .env.example .env
-# Set EDGE_BACNET_ADDRESS to this host's LAN CIDR, e.g. 192.168.204.59/24
+# Set EDGE_BACNET_ADDRESS to this host's LAN CIDR, e.g. 192.168.1.50/24
 docker compose --profile bacnet build
 docker compose --profile bacnet up -d
 ```
@@ -62,9 +62,9 @@ Native (on the Pi):
 ```bash
 python3 -m pip install -e ../.. -e '.[sparql]'
 export EDGE_DRIVER=bacnet
-export EDGE_BACNET_ADDRESS=192.168.204.59/24
+export EDGE_BACNET_ADDRESS=192.168.1.50/24
 python -m edge_microdot \
-  --address 192.168.204.59/24 \
+  --address 192.168.1.50/24 \
   --devices 54545,5007 \
   --max-props 25
 ```
@@ -106,15 +106,60 @@ The client uses form SCRAM first, then **HTTP Basic** on `/stream/health` and th
 | `NIAGARA_INSECURE` | `0` | Skip TLS verify (lab only) |
 | `NIAGARA_WS_AUTH_HEADER` | `0` | Basic auth on WS handshake |
 
+### Authentication
+
+Microdot built-ins only (no Caddy, no extra HTTP stack):
+
+| Mechanism | Use |
+| --- | --- |
+| `TokenAuth` | API routes (`Authorization: Bearer …`) |
+| `BasicAuth` | `POST /auth/token` only |
+| `Session` + `Login` | Dashboard at `/` (cookie, `EDGE_SESSION_TTL`) |
+
+Environment:
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `EDGE_SECRET_KEY` | random at startup if unset | HMAC secret for JWT + session |
+| `EDGE_USERS` | — | `user:pbkdf2_sha256$iter$salt$hash` (semicolon-separated) |
+| `EDGE_TOKEN_TTL` | `3600` | Access token `exp` (seconds) |
+| `EDGE_SESSION_TTL` | `EDGE_TOKEN_TTL` | Session cookie lifetime |
+| `EDGE_AUTH_DISABLED` | off | Test/demo only |
+
+Hash a password for `EDGE_USERS`:
+
+```bash
+python3 -c "from edge_microdot.security import hash_password; print('operator:'+hash_password('change-me'))"
+```
+
+Endpoints:
+
+- `POST /auth/token` — BasicAuth → `{access_token, refresh_token, expires_in}`
+- `POST /auth/refresh` — JSON `{refresh_token}` → new pair; `401` if invalid/expired
+- `GET /login`, `POST /login`, `GET /logout` — dashboard session
+- `GET /auth/ws-token` — session cookie → bearer token for WebSocket
+- `WS /live?token=` — requires valid access token
+
+Optional native HTTPS on the Pi: set `EDGE_SSL_CERT` and `EDGE_SSL_KEY`, then pass an `ssl.SSLContext` (see `cli._load_ssl_context()`). Terminate TLS on the device only when you control certificate rotation on the SD card.
+
 ### HTTP routes
 
-- `GET /health` — source, counts, SPARQL flag, DB size
-- `GET /points` — configured targets
-- `GET /latest` — hot cache
-- `GET /history?ref=&start=&end=` — DuckDB window
-- `GET /rules` — last FDD evaluation
-- `POST /sparql` — read-only SELECT (optional)
-- `WS /live` — JSON sample stream
+- `GET /health` — public status
+- `GET /points`, `/latest`, `/history`, `/rules`, `POST /sparql`, `POST /poll/once` — bearer token
+- `WS /live` — bearer token (query or `Authorization`)
+
+## DuckDB on a PC
+
+The Pi keeps a single capped file (`EDGE_DB_PATH`). For ad-hoc analysis, copy it read-only to a laptop:
+
+```bash
+scp pi:/path/to/edge_history.duckdb ./edge_history.duckdb
+duckdb -ui ./edge_history.duckdb
+```
+
+Open the rule scripts under `sql/` (stale, out-of-range, flatline, spike). The same files run on the Pi inside the FDD timer.
+
+**Notebook:** `notebooks/edge_duckdb_sweep.ipynb` loads a copied database, runs `01_stale.sql`, and plots bucketed averages. Install `duckdb`, `matplotlib`, and Jupyter on the PC only — do not run the notebook on a 1 GB Pi.
 
 ## Memory notes (SPARQL)
 

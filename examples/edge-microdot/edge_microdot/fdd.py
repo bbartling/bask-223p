@@ -1,13 +1,12 @@
-"""Open-FDD-style SQL rules over hot latest + recent file history."""
+"""Open-FDD-style SQL sweeps (files under sql/) plus snapshot API."""
 from __future__ import annotations
 
 import threading
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any, Sequence
 
 from edge_microdot.history_store import HistoryStore
-from edge_microdot.models import PointTarget
 
 
 @dataclass(slots=True)
@@ -31,16 +30,17 @@ class FaultResult:
             "value": self.value,
         }
 
-
-# Generic SI-ish guardrails when targets lack explicit bounds (room/duct temps °C scale).
-_DEFAULT_MIN_MAX: dict[str, tuple[float, float]] = {
-    "C": (-40.0, 85.0),
-    "CEL": (-40.0, 85.0),
-    "DEG_C": (-40.0, 85.0),
-    "PA": (-500.0, 5000.0),
-    "PCT": (0.0, 100.0),
-    "%": (0.0, 100.0),
-}
+    @classmethod
+    def from_row(cls, row: dict[str, Any]) -> "FaultResult":
+        return cls(
+            rule_id=str(row.get("rule_id") or ""),
+            rule_name=str(row.get("rule_name") or ""),
+            ref=str(row.get("ref") or ""),
+            severity=str(row.get("severity") or "info"),
+            message=str(row.get("message") or ""),
+            observed_at_utc=str(row.get("observed_at_utc") or ""),
+            value=row.get("value"),
+        )
 
 
 class FddEngine:
@@ -51,104 +51,49 @@ class FddEngine:
         stale_minutes: float = 10.0,
         flatline_window: int = 6,
         flatline_epsilon: float = 1e-6,
+        jump_threshold: float = 5.0,
+        temp_lo: float = -40.0,
+        temp_hi: float = 85.0,
+        sql_dir: Path | None = None,
     ) -> None:
         self.history = history
         self.stale_minutes = stale_minutes
         self.flatline_window = max(2, int(flatline_window))
         self.flatline_epsilon = flatline_epsilon
+        self.jump_threshold = jump_threshold
+        self.temp_lo = temp_lo
+        self.temp_hi = temp_hi
+        self.sql_dir = sql_dir or (Path(__file__).resolve().parent.parent / "sql")
         self._lock = threading.Lock()
         self._last_results: list[FaultResult] = []
         self._last_run_utc: str | None = None
 
-    def run(self, latest: Sequence[dict[str, Any]], targets: Sequence[PointTarget]) -> list[FaultResult]:
-        now = datetime.now(timezone.utc)
-        now_iso = now.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
-        stale_cutoff = now - timedelta(minutes=self.stale_minutes)
-        bounds_by_ref = {t.ref: (t.min_value, t.max_value) for t in targets if t.ref}
-
+    def run(self, latest: Sequence[dict[str, Any]] | None = None) -> list[FaultResult]:
+        del latest  # rules are SQL-driven against file history
         results: list[FaultResult] = []
-        for row in latest:
-            ref = str(row.get("ref") or "")
-            if not ref:
+        runners = [
+            (self.sql_dir / "01_stale.sql", (self.stale_minutes, self.stale_minutes)),
+            (self.sql_dir / "02_out_of_range.sql", (self.temp_lo, self.temp_hi, self.temp_lo, self.temp_hi)),
+            (
+                self.sql_dir / "03_flatline.sql",
+                (self.flatline_window, self.flatline_window, self.flatline_epsilon),
+            ),
+            (self.sql_dir / "04_spike.sql", (self.jump_threshold, self.jump_threshold)),
+        ]
+        for path, params in runners:
+            if not path.is_file():
                 continue
-            ts_raw = row.get("timestamp_utc") or ""
             try:
-                ts = datetime.fromisoformat(ts_raw.replace("Z", "+00:00"))
-            except ValueError:
-                ts = now
-            status = str(row.get("status") or "ok")
-            val = row.get("value")
-            if row.get("value_num") is not None:
-                val = row["value_num"]
+                rows = self.history.run_sql_file(path, params)
+            except Exception:
+                continue
+            results.extend(FaultResult.from_row(r) for r in rows)
 
-            if status != "ok":
-                results.append(
-                    FaultResult(
-                        rule_id="R-STATUS",
-                        rule_name="bad_status",
-                        ref=ref,
-                        severity="warn",
-                        message=f"Point status is {status}",
-                        observed_at_utc=now_iso,
-                        value=val,
-                    )
-                )
-
-            if ts < stale_cutoff:
-                results.append(
-                    FaultResult(
-                        rule_id="R-STALE",
-                        rule_name="stale_data",
-                        ref=ref,
-                        severity="warn",
-                        message=f"No fresh sample for {self.stale_minutes:g} min",
-                        observed_at_utc=now_iso,
-                        value=val,
-                    )
-                )
-
-            if isinstance(val, (int, float)):
-                unit_key = str(row.get("units") or "").upper().replace("°", "DEG_")
-                lo, hi = bounds_by_ref.get(ref, (None, None))
-                if lo is None or hi is None:
-                    lo, hi = _DEFAULT_MIN_MAX.get(unit_key, (-1e9, 1e9))
-                if val < lo or val > hi:
-                    results.append(
-                        FaultResult(
-                            rule_id="R-RANGE",
-                            rule_name="out_of_range",
-                            ref=ref,
-                            severity="alarm",
-                            message=f"Value {val} outside [{lo}, {hi}] ({unit_key or 'unitless'})",
-                            observed_at_utc=now_iso,
-                            value=val,
-                        )
-                    )
-
-                recent = self.history.query_history(ref=ref, limit=self.flatline_window)
-                nums = [
-                    float(r["value_num"])
-                    for r in recent
-                    if r.get("value_num") is not None
-                ]
-                if len(nums) >= self.flatline_window:
-                    spread = max(nums) - min(nums)
-                    if spread <= self.flatline_epsilon:
-                        results.append(
-                            FaultResult(
-                                rule_id="R-FLAT",
-                                rule_name="sensor_flatline",
-                                ref=ref,
-                                severity="info",
-                                message=f"Last {len(nums)} samples unchanged (spread={spread:g})",
-                                observed_at_utc=now_iso,
-                                value=val,
-                            )
-                        )
-
+        observed = results[0].observed_at_utc if results else None
         with self._lock:
             self._last_results = results
-            self._last_run_utc = now_iso
+            if observed:
+                self._last_run_utc = observed
         return results
 
     def snapshot(self) -> dict[str, Any]:

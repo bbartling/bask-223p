@@ -17,7 +17,20 @@ from edge_microdot.logging_setup import configure_logging
 from edge_microdot.models import PointTarget
 from edge_microdot.sources import BacnetRpmSource, BaskStreamSource
 from edge_microdot.sources.fake import FakePollSource
+from edge_microdot.security import load_auth_from_env
 from edge_microdot.sparql_kb import SparqlKb
+
+
+def _load_ssl_context():
+    cert = os.environ.get("EDGE_SSL_CERT", "").strip()
+    key = os.environ.get("EDGE_SSL_KEY", "").strip()
+    if not cert or not key:
+        return None
+    import ssl
+
+    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    ctx.load_cert_chain(cert, key)
+    return ctx
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
@@ -158,6 +171,7 @@ def build_runtime(argv: Sequence[str] | None = None) -> tuple:
     host = args.host or os.environ.get("EDGE_HOST", "0.0.0.0")
     port = args.port or int(os.environ.get("EDGE_PORT", "8080"))
 
+    auth = load_auth_from_env()
     app = create_app(
         source=source,
         source_kind=source_kind,
@@ -167,6 +181,7 @@ def build_runtime(argv: Sequence[str] | None = None) -> tuple:
         history=history,
         fdd=fdd,
         sparql=sparql,
+        auth=auth,
         site=site,
         poll_interval_s=poll_interval,
         flush_interval_s=flush_interval,
@@ -199,7 +214,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             asyncio.run(_once())
             return 0
         app.start_background_workers()
-        app.run(host=host, port=port, debug=False)
+        ssl_ctx = _load_ssl_context()
+        app.run(host=host, port=port, debug=False, ssl=ssl_ctx)
         return 0
     finally:
         history.close()

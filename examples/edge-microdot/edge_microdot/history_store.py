@@ -163,6 +163,16 @@ class HistoryStore:
             out.append(rec)
         return out
 
+    def run_sql_file(self, path: Path, params: Sequence[Any]) -> list[dict[str, Any]]:
+        sql = path.read_text(encoding="utf-8")
+        with self._lock:
+            cur = self.conn.execute(sql, list(params))
+            if cur.description is None:
+                return []
+            cols = [d[0] for d in cur.description]
+            rows = cur.fetchall()
+        return [dict(zip(cols, row)) for row in rows]
+
     def close(self) -> None:
         with self._lock:
             self._flush_locked()

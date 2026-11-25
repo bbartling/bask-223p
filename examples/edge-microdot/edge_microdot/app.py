@@ -15,6 +15,7 @@ from edge_microdot.config import LoadedConfig
 from edge_microdot.fdd import FddEngine
 from edge_microdot.history_store import HistoryStore
 from edge_microdot.models import PointSample, PointTarget
+from edge_microdot.security import AuthBundle, api_auth, attach_auth_routes, require_token
 from edge_microdot.sparql_kb import SparqlKb
 
 LOG = logging.getLogger(__name__)
@@ -72,6 +73,7 @@ def create_app(
     history: HistoryStore,
     fdd: FddEngine,
     sparql: SparqlKb,
+    auth: AuthBundle,
     site: str,
     poll_interval_s: float,
     flush_interval_s: float,
@@ -82,6 +84,7 @@ def create_app(
     targets_list = targets if isinstance(targets, list) else list(targets)
     poll_lock = asyncio.Lock()
     static_dir = Path(__file__).resolve().parent / "static"
+    attach_auth_routes(app, auth)
 
     async def ingest_samples(samples: Sequence[PointSample]) -> None:
         if not samples:
@@ -123,8 +126,7 @@ def create_app(
         while True:
             await asyncio.sleep(max(1.0, fdd_interval_s))
             try:
-                latest = hot.snapshot_latest()
-                fdd.run(latest, targets_list)
+                fdd.run()
             except Exception:
                 LOG.exception("fdd failed")
 
@@ -141,6 +143,7 @@ def create_app(
     app.start_background_workers = start_background_workers  # type: ignore[attr-defined]
 
     @app.route("/")
+    @auth.login
     async def index(request):
         index_path = static_dir / "index.html"
         return send_file(str(index_path))
@@ -163,9 +166,13 @@ def create_app(
             "sparql_enabled": sparql.enabled,
             "sparql_triples": sparql.triple_count,
             "hot_backend": hot.backend,
+            "auth_disabled": auth.disabled,
         }
 
+    protect = api_auth(auth)
+
     @app.get("/points")
+    @protect
     async def list_points(request):
         device = request.args.get("device")
         object_type = request.args.get("object_type")
@@ -179,11 +186,13 @@ def create_app(
         return {"count": len(out), "points": out}
 
     @app.get("/latest")
+    @protect
     async def latest(request):
         rows = hot.snapshot_latest()
         return {"count": len(rows), "samples": rows}
 
     @app.get("/history")
+    @protect
     async def get_history(request):
         ref = request.args.get("ref")
         start = request.args.get("start")
@@ -193,15 +202,18 @@ def create_app(
         return {"store": "duckdb", "ref": ref, "count": len(rows), "samples": rows}
 
     @app.get("/rules")
+    @protect
     async def rules(request):
         return fdd.snapshot()
 
     @app.post("/poll/once")
+    @protect
     async def trigger_poll(request):
         samples = await poll_once()
         return {"count": len(samples), "samples": [s.to_dict() for s in samples]}
 
     @app.post("/sparql")
+    @protect
     async def run_sparql(request):
         if not sparql.enabled:
             return Response.body("SPARQL disabled", status_code=503)
@@ -213,6 +225,7 @@ def create_app(
             return Response.body(str(exc), status_code=400)
 
     @app.get("/sparql/example")
+    @protect
     async def sparql_example(request):
         if not sparql.enabled:
             return {"enabled": False, "example_query": DEFAULT_SPARQL}
@@ -224,6 +237,9 @@ def create_app(
 
     @app.route("/live")
     async def live_ws(request):
+        gate = require_token(auth, request)
+        if isinstance(gate, Response):
+            return gate
         ws = await websocket_upgrade(request)
         await hub.add(ws)
         try:

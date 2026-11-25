@@ -30,7 +30,7 @@ def test_rss_under_50_points(tmp_path):
     hot.write(samples)
     history.stage(samples)
     history.flush()
-    fdd.run(hot.snapshot_latest(), targets)
+    fdd.run()
     after = _rss_mb()
     delta = after - baseline
     print(f"\nMEMORY_RSS_MB idle-ish={after:.1f} delta_after_50pt_poll={delta:.1f}")
