@@ -69,7 +69,7 @@ python -m edge_microdot \
   --max-props 25
 ```
 
-Open `http://<pi>:8080/` for live values, sparklines, and rule flags.
+Open `https://<pi-ip>/` for live values, sparklines, and rule flags. Caddy issues a `tls internal` certificate, so browsers warn until its root CA is trusted. Microdot itself listens on loopback only; plain `http://<pi>:8080` is no longer reachable from the LAN.
 
 ## Quickstart — Worker Pi 2 (Niagara read-only)
 

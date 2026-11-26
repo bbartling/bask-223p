@@ -10,7 +10,7 @@ from typing import Any, Sequence
 
 from microdot import Microdot, Response, send_file
 from microdot.session import with_session
-from microdot.websocket import websocket_upgrade
+from microdot.websocket import WebSocketError, websocket_upgrade
 
 from edge_microdot.cache import HotCache
 from edge_microdot.config import LoadedConfig
@@ -338,6 +338,9 @@ def create_app(
                 await ws.send(json.dumps({"type": "snapshot", "count": len(snap), "samples": snap}))
             while True:
                 await ws.receive()
+        except WebSocketError:
+            # Client closed or dropped the connection; nothing to report.
+            pass
         finally:
             await hub.remove(ws)
 
