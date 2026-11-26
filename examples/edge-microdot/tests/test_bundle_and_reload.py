@@ -246,7 +246,8 @@ def test_bundle_and_sql_routes_auth(tmp_path, monkeypatch):
 
         rules_resp = await client.get("/api/sql-rules", headers=bearer)
         assert rules_resp.status_code == 200
-        assert "duckdb-wasm" in rules_resp.json["duckdb_wasm_url"]
+        assert rules_resp.json["duckdb_wasm_url"] == "/static/vendor/duckdb/duckdb-browser.mjs"
+        assert rules_resp.json["duckdb_wasm_bundle_base"] == "/static/vendor/duckdb"
         assert any(r["filename"] == "sv_stale.sql" for r in rules_resp.json["rules"])
 
         login = await client.post(

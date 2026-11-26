@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Sequence
 
 from microdot import Microdot, Response, send_file
+from microdot.session import with_session
 from microdot.websocket import websocket_upgrade
 
 from edge_microdot.cache import HotCache
@@ -21,7 +22,8 @@ from edge_microdot.sparql_kb import SparqlKb
 
 LOG = logging.getLogger(__name__)
 
-DEFAULT_DUCKDB_WASM_URL = "https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.29.0/+esm"
+DEFAULT_DUCKDB_WASM_URL = "/static/vendor/duckdb/duckdb-browser.mjs"
+DEFAULT_DUCKDB_WASM_BUNDLE_BASE = "/static/vendor/duckdb"
 
 DEFAULT_SPARQL = """PREFIX s223: <http://data.ashrae.org/standard223#>
 PREFIX ref: <https://brickschema.org/schema/Brick/ref#>
@@ -252,7 +254,10 @@ def create_app(
             or os.environ.get("EDGE_DUCKDB_WASM_CDN", "").strip()
             or DEFAULT_DUCKDB_WASM_URL
         )
-        bundle_base = os.environ.get("EDGE_DUCKDB_WASM_BUNDLE_BASE", "").strip()
+        bundle_base = (
+            os.environ.get("EDGE_DUCKDB_WASM_BUNDLE_BASE", "").strip()
+            or DEFAULT_DUCKDB_WASM_BUNDLE_BASE
+        )
         return {
             "duckdb_wasm_url": wasm_url,
             "duckdb_wasm_bundle_base": bundle_base,
@@ -315,10 +320,15 @@ def create_app(
             return {"enabled": True, "error": str(exc)}
 
     @app.route("/live")
-    async def live_ws(request):
+    @with_session
+    async def live_ws(request, session):
+        if request.args.get("token"):
+            return Response("Unauthorized", status_code=401)
         gate = require_token(auth, request)
         if isinstance(gate, Response):
-            return gate
+            stored = session.get("api_access") if session is not None else None
+            if not stored or auth.tokens.verify_access(str(stored)) is None:
+                return gate
         ws = await websocket_upgrade(request)
         await hub.add(ws)
         try:

@@ -92,7 +92,7 @@ The client uses form SCRAM first, then **HTTP Basic** on `/stream/health` and th
 | --- | --- | --- |
 | `EDGE_DRIVER` | `fake` | `bacnet`, `niagara`, or `fake` |
 | `EDGE_SITE` | `demo-site` | Site id on samples |
-| `EDGE_HOST` / `EDGE_PORT` | `0.0.0.0` / `8080` | HTTP bind |
+| `EDGE_HOST` / `EDGE_PORT` | `127.0.0.1` / `8080` | HTTP bind (Caddy is the public listener) |
 | `EDGE_POLL_INTERVAL` | `15` | Seconds between polls |
 | `EDGE_FLUSH_INTERVAL` | `30` | Sync hot cache into in-memory DuckDB (not a card write) |
 | `EDGE_SD_CARD` | off (`1` in Compose) | Use `EDGE_DURABLE_MINUTES` for Parquet snapshots and the log file |
@@ -106,8 +106,8 @@ The client uses form SCRAM first, then **HTTP Basic** on `/stream/health` and th
 | `EDGE_DB_MAX_MB` | `100` | Oldest-first retention cap |
 | `EDGE_HOT_BACKEND` | `dict` | `dict` or `duckdb` (`:memory:`) |
 | `EDGE_ENABLE_SPARQL` | `0` | Load pyoxigraph store. An explicit `0` stays off even if a TTL is loaded |
-| `EDGE_DUCKDB_WASM_URL` | jsDelivr `@duckdb/duckdb-wasm@1.29.0/+esm` | ESM module URL for `/sql` (set to self-host) |
-| `EDGE_DUCKDB_WASM_BUNDLE_BASE` | — | Optional self-hosted base URL for `.wasm` / `.worker.js` |
+| `EDGE_DUCKDB_WASM_URL` | `/static/vendor/duckdb/duckdb-browser.mjs` | Vendored DuckDB-WASM 1.32.0 (no CDN) |
+| `EDGE_DUCKDB_WASM_BUNDLE_BASE` | `/static/vendor/duckdb` | Base for `duckdb-eh.wasm` and the worker |
 | `EDGE_BACNET_ADDRESS` | — | BACpypes3 bind address (`host/prefix`, required for the BACnet driver) |
 | `EDGE_BACNET_DEVICES` | `54545,5007` | Device instances to discover via Who-Is when no point file is given |
 | `NIAGARA_URL` / `USER` / `PASS` | — | Required for Niagara driver |
@@ -116,7 +116,7 @@ The client uses form SCRAM first, then **HTTP Basic** on `/stream/health` and th
 
 ### Authentication
 
-Microdot built-ins only (no Caddy, no extra HTTP stack):
+Microdot built-ins, with Caddy in front for LAN TLS (`Caddyfile`, `tls internal`). The dashboard WebSocket is `wss://` on HTTPS and authenticates with the session cookie or an `Authorization: Bearer` header. Tokens are not accepted on the query string.
 
 | Mechanism | Use |
 | --- | --- |

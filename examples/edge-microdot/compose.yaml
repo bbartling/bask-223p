@@ -44,7 +44,7 @@ services:
       - "--max-props"
       - "25"
       - "--host"
-      - "0.0.0.0"
+      - "127.0.0.1"
       - "--port"
       - "8080"
 
@@ -96,6 +96,19 @@ services:
       - "--base"
       - "${BASK_BASE_ORD:-slot:/Drivers}"
       - "--host"
-      - "0.0.0.0"
+      - "127.0.0.1"
       - "--port"
       - "8080"
+
+  caddy:
+    image: caddy:2
+    network_mode: host
+    restart: unless-stopped
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  caddy-data:
+  caddy-config:

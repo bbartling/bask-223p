@@ -1,4 +1,6 @@
-# bask-223p: baskStream → ASHRAE 223P TTL maker
+# open-hvac-edge
+
+baskStream → ASHRAE 223P TTL maker, with a Microdot edge app under `examples/edge-microdot`.
 
 Read a Niagara 4 station **read-only** over [baskStream](https://github.com/rbhans/bask-stream)
 (authenticated WebSocket, MessagePack, API 1.12 and later) and write an **external ASHRAE 223P + Brick
@@ -41,7 +43,7 @@ flowchart LR
 ## Quick start (PowerShell, Python 3.11+)
 
 ```powershell
-cd bask-223p
+cd open-hvac-edge
 py -3.11 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -e ".[all]"

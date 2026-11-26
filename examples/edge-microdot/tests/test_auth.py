@@ -106,6 +106,17 @@ def test_refresh_rotation(auth_app):
     asyncio.run(_run())
 
 
+def test_live_rejects_query_token(auth_app):
+    from microdot.test_client import TestClient
+
+    async def _run():
+        client = TestClient(auth_app)
+        denied = await client.get("/live?token=not-a-header")
+        assert denied.status_code == 401
+
+    asyncio.run(_run())
+
+
 def test_login_logout_flow(auth_app):
     from microdot.test_client import TestClient
 

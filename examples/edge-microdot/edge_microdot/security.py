@@ -251,10 +251,11 @@ def load_user_factory(users: UserDirectory):
 
 
 def extract_bearer_token(request) -> str | None:
+    """Bearer token from the Authorization header only. Never the query string."""
     header = request.headers.get("Authorization") or ""
     if header.lower().startswith("bearer "):
         return header.split(" ", 1)[1].strip()
-    return request.args.get("token")
+    return None
 
 
 def api_auth(auth: AuthBundle):

@@ -1,8 +1,8 @@
-FROM python:3.14-slim
+FROM python:3.15-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
-ENV EDGE_HOST=0.0.0.0
+ENV EDGE_HOST=127.0.0.1
 ENV EDGE_PORT=8080
 
 WORKDIR /app
@@ -26,4 +26,4 @@ EXPOSE 8080
 EXPOSE 47808/udp
 
 ENTRYPOINT ["python", "-m", "edge_microdot"]
-CMD ["--host", "0.0.0.0", "--port", "8080", "--driver", "fake"]
+CMD ["--host", "127.0.0.1", "--port", "8080", "--driver", "fake"]

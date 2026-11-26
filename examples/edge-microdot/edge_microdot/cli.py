@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import logging
 import os
 import signal
 import sys
@@ -174,6 +175,11 @@ def build_runtime(argv: Sequence[str] | None = None) -> tuple:
     sd_card = _env_bool("EDGE_SD_CARD")
     history = HistoryStore(db_path, max_bytes=max_mb * 1024 * 1024, retention_hours=retention_hours)
     fdd = FddEngine(history=history, targets=targets)
+    from edge_microdot.openfdd_pin import startup_lines
+
+    log = logging.getLogger("edge_microdot")
+    for line in startup_lines():
+        log.info("%s", line)
     enable_sparql = _sparql_enabled(cfg)
     if not enable_sparql:
         sparql = SparqlKb(None)
@@ -189,7 +195,7 @@ def build_runtime(argv: Sequence[str] | None = None) -> tuple:
         flush_interval = 30.0
     fdd_interval = args.fdd_interval or float(os.environ.get("EDGE_FDD_INTERVAL", "60"))
     snapshot_interval = resolve_snapshot_interval(args.snapshot_interval, sd_card=sd_card)
-    host = args.host or os.environ.get("EDGE_HOST", "0.0.0.0")
+    host = args.host or os.environ.get("EDGE_HOST", "127.0.0.1")
     port = args.port or int(os.environ.get("EDGE_PORT", "8080"))
 
     auth = load_auth_from_env()

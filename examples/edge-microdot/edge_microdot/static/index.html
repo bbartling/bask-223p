@@ -149,8 +149,7 @@
       const faultsByRef = await refreshRules();
       (latest.samples || []).forEach(s => upsertSample(s, faultsByRef));
       const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-      const wsTok = (await fetch('/auth/ws-token', { credentials: 'include' }).then(r => r.json())).access_token;
-      const ws = new WebSocket(`${proto}://${location.host}/live?token=${encodeURIComponent(wsTok)}`);
+      const ws = new WebSocket(`${proto}://${location.host}/live`);
       ws.onmessage = (ev) => {
         const msg = JSON.parse(ev.data);
         const batch = msg.samples || [];

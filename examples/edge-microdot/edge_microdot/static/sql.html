@@ -188,16 +188,14 @@
       statusEl.textContent = 'loading DuckDB-WASM…';
       const duckdb = await import(wasmUrl);
       let bundle;
-      if (bundleBase) {
-        const base = bundleBase.replace(/\/$/, '');
-        bundle = {
-          mainModule: base + '/duckdb-eh.wasm',
-          mainWorker: base + '/duckdb-browser-eh.worker.js',
-        };
-      } else {
-        const bundles = duckdb.getJsDelivrBundles();
-        bundle = await duckdb.selectBundle(bundles);
+      if (!bundleBase) {
+        throw new Error('DuckDB-WASM bundle base is not configured');
       }
+      const base = bundleBase.replace(/\/$/, '');
+      bundle = {
+        mainModule: base + '/duckdb-eh.wasm',
+        mainWorker: base + '/duckdb-browser-eh.worker.js',
+      };
       const workerBlob = new Blob(['importScripts("' + bundle.mainWorker + '");'], { type: 'text/javascript' });
       const worker = new Worker(URL.createObjectURL(workerBlob));
       const logger = new duckdb.ConsoleLogger(duckdb.LogLevel.WARNING);
