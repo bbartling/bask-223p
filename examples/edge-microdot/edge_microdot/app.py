@@ -18,7 +18,9 @@ from edge_microdot.config import LoadedConfig
 from edge_microdot.fdd import FddEngine
 from edge_microdot.history_store import HistoryStore
 from edge_microdot.models import PointSample, PointTarget
+from edge_microdot.publish import publish_enabled, scheduled_publish
 from edge_microdot.security import AuthBundle, api_auth, attach_auth_routes, require_token
+from edge_microdot.share import attach_share_api
 from edge_microdot.sparql_kb import SparqlKb
 from edge_microdot.bacnet_api import attach_bacnet_api
 from edge_microdot.modbus_api import attach_modbus_api
@@ -184,6 +186,7 @@ def create_app(
         queue_size=int(os.environ.get("EDGE_LIVE_QUEUE", "8")),
     )
     targets_list = targets if isinstance(targets, list) else list(targets)
+    configured_targets = list(targets_list)
     poll_lock = asyncio.Lock()
     static_dir = Path(__file__).resolve().parent / "static"
     attach_auth_routes(app, auth)
@@ -258,12 +261,23 @@ def create_app(
 
     def start_background_workers() -> list[asyncio.Task[None]]:
         """Start poll, flush, snapshot, and FDD tasks on the running loop."""
-        return [
+        tasks = [
             asyncio.create_task(poll_loop()),
             asyncio.create_task(flush_loop()),
             asyncio.create_task(snapshot_loop()),
             asyncio.create_task(fdd_loop()),
         ]
+        if publish_enabled():
+            tasks.append(
+                asyncio.create_task(
+                    scheduled_publish(
+                        cfg,
+                        configured_targets,
+                        sparql.store if sparql.enabled else None,
+                    )
+                )
+            )
+        return tasks
 
     async def serve(host: str = "127.0.0.1", port: int = 8080, ssl: Any = None) -> None:
         tasks = start_background_workers()
@@ -469,4 +483,12 @@ def create_app(
     attach_bacnet_api(app, source=source, auth=auth)
     attach_modbus_api(app, source=source, auth=auth)
     attach_ui_api(app, history=history, auth=auth, sparql=sparql, site=site)
+    attach_share_api(
+        app,
+        auth=auth,
+        cfg=cfg,
+        targets=configured_targets,
+        graph=cfg.graph,
+        store=sparql.store if sparql.enabled else None,
+    )
     return app

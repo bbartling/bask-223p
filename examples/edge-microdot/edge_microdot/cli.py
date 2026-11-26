@@ -329,6 +329,11 @@ async def _run_scan(args: argparse.Namespace) -> int:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    args = list(sys.argv[1:] if argv is None else argv)
+    if args and args[0] == "publish":
+        from edge_microdot.publish import publish_cli
+
+        return publish_cli(args[1:])
     pre = build_parser().parse_args(argv)
     if pre.scan:
         configure_logging()
