@@ -20,7 +20,7 @@ from edge_microdot.sparql_kb import SparqlKb  # noqa: E402
 
 
 def main() -> None:
-    os.environ.setdefault("EDGE_SECRET_KEY", "contract-suite-secret-key-32b")
+    os.environ.setdefault("EDGE_SECRET_KEY", "contract-suite-secret-key-32-bytes-ok")
     os.environ.setdefault(
         "EDGE_USERS",
         "viewer:"
