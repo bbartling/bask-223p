@@ -138,7 +138,8 @@ def create_app(
 
     async def snapshot_loop() -> None:
         while True:
-            await asyncio.sleep(max(5.0, snapshot_interval_s))
+            wait_s = min(30.0, snapshot_interval_s) if history.snapshot_count() == 0 else max(5.0, snapshot_interval_s)
+            await asyncio.sleep(wait_s)
             try:
                 snap = await asyncio.to_thread(history.write_snapshot)
                 if snap is not None:

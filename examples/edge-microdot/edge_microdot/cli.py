@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import os
+import signal
 import sys
 from pathlib import Path
 from typing import Sequence
@@ -219,6 +220,10 @@ def main(argv: Sequence[str] | None = None) -> int:
 
             asyncio.run(_once())
             return 0
+        def _on_sigterm(_signum, _frame):
+            raise SystemExit(0)
+
+        signal.signal(signal.SIGTERM, _on_sigterm)
         app.start_background_workers()
         ssl_ctx = _load_ssl_context()
         app.run(host=host, port=port, debug=False, ssl=ssl_ctx)
