@@ -42,13 +42,9 @@ def main() -> None:
     ]
     history = HistoryStore(Path("/tmp/edge-contract.duckdb"))
     source = FakePollSource(targets)
-    samples = source.poll_once()
-    history.stage(samples)
+    history.upsert_points(targets)
+    history.stage(source.poll_once())
     history.flush()
-    history.query(
-        "UPDATE fdd.point SET role = 'outside_air_temperature', equipment_id = 'ahu-1' WHERE point_key = ?",
-        [targets[0].ref],
-    )
     app = create_app(
         source=source,
         source_kind="fake",

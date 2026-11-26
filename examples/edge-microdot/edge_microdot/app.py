@@ -143,7 +143,6 @@ def create_app(
             return
         hot.write(samples)
         history.stage(samples)
-        history.flush()
         await hub.broadcast(
             {"type": "samples", "count": len(samples), "samples": [s.to_dict() for s in samples]}
         )
@@ -170,7 +169,7 @@ def create_app(
             await asyncio.sleep(max(1.0, flush_interval_s))
             try:
                 n = history.flush()
-                n += history.sync_from_hot(hot)
+                history.prune_memory()
                 from edge_microdot.logging_setup import drain_logs
 
                 drain_logs()

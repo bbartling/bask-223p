@@ -813,7 +813,7 @@ class HistoryStore:
                 unit = COALESCE(excluded.unit, fdd.point.unit),
                 source_unit = COALESCE(excluded.source_unit, fdd.point.source_unit),
                 haystack_id = COALESCE(excluded.haystack_id, fdd.point.haystack_id),
-                attrs = excluded.attrs,
+                attrs = json_merge_patch(COALESCE(fdd.point.attrs, '{}'::JSON), excluded.attrs),
                 updated_at = now()
             """,
             [
@@ -962,22 +962,38 @@ class HistoryStore:
         with self._lock:
             return self._flush_locked()
 
+    def prune_memory(self) -> None:
+        """Apply retention and the in-memory row cap. Called on a timer, not per row."""
+        with self._lock:
+            self._prune_memory_locked()
+
     def _flush_locked(self) -> int:
         if not self._pending:
             return 0
         batch = self._pending
         self._pending = []
-        for rec in batch:
-            self._upsert_point_row(
-                site_id=rec["site_id"],
-                point_key=rec["point_key"],
-                equipment_id=rec["equipment_id"],
-                role="",
-                unit=rec["unit"],
-                source_unit=rec["source_unit"],
-                attrs=rec["attrs"],
+        try:
+            self.conn.execute("BEGIN")
+            self.conn.executemany(
+                """
+                INSERT INTO fdd.point (
+                    site_id, point_key, equipment_id, role, kind, unit, source_unit, attrs
+                ) VALUES (?, ?, ?, '', 'numeric', ?, ?, CAST(? AS JSON))
+                ON CONFLICT (site_id, point_key) DO NOTHING
+                """,
+                [
+                    [
+                        rec["site_id"],
+                        rec["point_key"],
+                        rec["equipment_id"],
+                        rec["unit"] or None,
+                        rec["source_unit"] or None,
+                        _json_dumps(rec["attrs"]),
+                    ]
+                    for rec in batch
+                ],
             )
-            self.conn.execute(
+            self.conn.executemany(
                 """
                 INSERT INTO fdd.sample_store
                     (site_id, point_key, ts, value, value_text, status)
@@ -988,16 +1004,26 @@ class HistoryStore:
                     status = excluded.status
                 """,
                 [
-                    rec["site_id"],
-                    rec["point_key"],
-                    rec["ts"],
-                    rec["value"],
-                    rec["value_text"],
-                    rec["status"],
+                    [
+                        rec["site_id"],
+                        rec["point_key"],
+                        rec["ts"],
+                        rec["value"],
+                        rec["value_text"],
+                        rec["status"],
+                    ]
+                    for rec in batch
                 ],
             )
+            self.conn.execute("COMMIT")
+        except Exception:
+            try:
+                self.conn.execute("ROLLBACK")
+            except Exception:
+                LOG.exception("rollback after failed flush")
+            self._pending = batch + self._pending
+            raise
         self._dirty_since_snapshot = True
-        self._prune_memory_locked()
         return len(batch)
 
     def sync_from_hot(self, hot: HotCache) -> int:
@@ -1037,14 +1063,21 @@ class HistoryStore:
                     "object": str(rec.get("object") or ""),
                     "property": str(rec.get("property") or "present-value"),
                 }
-                self._upsert_point_row(
-                    site_id=site_id,
-                    point_key=ref,
-                    equipment_id=_target_equipment(None, ref),
-                    role="",
-                    unit=si_unit or normalize_si_unit(units),
-                    source_unit=units,
-                    attrs=attrs,
+                self.conn.execute(
+                    """
+                    INSERT INTO fdd.point (
+                        site_id, point_key, equipment_id, role, kind, unit, source_unit, attrs
+                    ) VALUES (?, ?, ?, '', 'numeric', ?, ?, CAST(? AS JSON))
+                    ON CONFLICT (site_id, point_key) DO NOTHING
+                    """,
+                    [
+                        site_id,
+                        ref,
+                        _target_equipment(None, ref),
+                        si_unit or normalize_si_unit(units) or None,
+                        units or None,
+                        _json_dumps(attrs),
+                    ],
                 )
                 self.conn.execute(
                     """
@@ -1379,5 +1412,8 @@ class HistoryStore:
         except Exception:
             LOG.exception("snapshot on close failed")
         with self._lock:
-            self._flush_locked()
+            try:
+                self._flush_locked()
+            except Exception:
+                LOG.exception("flush on close failed")
             self.conn.close()
