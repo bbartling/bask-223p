@@ -6,6 +6,9 @@ services:
       dockerfile: examples/edge-microdot/Dockerfile
     network_mode: host
     restart: unless-stopped
+    depends_on:
+      var-init:
+        condition: service_completed_successfully
     read_only: true
     cap_drop:
       - ALL
@@ -83,6 +86,9 @@ services:
       context: ../..
       dockerfile: examples/edge-microdot/Dockerfile
     restart: unless-stopped
+    depends_on:
+      var-init:
+        condition: service_completed_successfully
     read_only: true
     cap_drop:
       - ALL
@@ -162,6 +168,28 @@ services:
       - "--port"
       - "8080"
 
+  # One-shot: the edge image runs as uid 1000 (edge). A var/ created by an older
+  # root-run image (or by Docker itself) is root-owned and the app could not write
+  # snapshots. This hands it to uid 1000 before the edge service starts.
+  var-init:
+    profiles: ["bacnet", "niagara"]
+    image: caddy:2@sha256:4851e54a46b206517c574821bb5cc67f170d2156041e9fbc4c9193b45e84a75b
+    user: "0"
+    entrypoint: ["chown", "-R", "1000:1000", "/var-data"]
+    restart: "no"
+    read_only: true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_READ_SEARCH
+      - FOWNER
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 64m
+    volumes:
+      - ./var:/var-data
+
   caddy:
     image: caddy:2@sha256:4851e54a46b206517c574821bb5cc67f170d2156041e9fbc4c9193b45e84a75b
     network_mode: host
@@ -175,9 +203,6 @@ services:
       - no-new-privileges:true
     mem_limit: 512m
     stop_grace_period: 30s
-    env_file:
-      - path: .env
-        required: false
     tmpfs:
       - /tmp:size=32m,mode=1777
     environment:
