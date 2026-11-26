@@ -39,11 +39,11 @@ complete 223 topology (no connection points or sensors).
    at `https://open223.info/223p.ttl`, then take the imports closure (QUDT and other
    dependencies come along). `copy_closure` returns a mutable `rdflib.Graph` on stable
    releases.
-2. [Shifty](https://github.com/gtfierro/shifty) (`pyshifty`) validates the model against
-   that closure (SHACL and SHACL-AF) and can run inference separately.
-3. If those packages are not installed, `export-223p --shapes 223p.ttl` runs the same
-   shapes with pyshacl. `conforms` means no Violations; Warnings such as a missing
-   `s223:Sensor` that `observes` a property are expected for this graph style.
+2. `validate_223p` runs [Shifty](https://github.com/gtfierro/shifty) `0.6.0` on that closure
+   with Shifty's defaults and `minimum_severity="Violation"`. OntoEnv is `0.6.4`, offline
+   and strict. A missing engine is an error. `--cross-check pyshacl` does not set `conforms`.
+3. `conforms` means no Violations. Warnings such as a missing `s223:Sensor` that `observes`
+   a property are expected for this graph style.
 
 ## Secondary tools
 

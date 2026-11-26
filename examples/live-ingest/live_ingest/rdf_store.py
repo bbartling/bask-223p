@@ -12,7 +12,7 @@ from .sparql_guard import validate_read_only_sparql
 
 
 class RdfKnowledgeBase:
-    """Pairs rdflib compatibility (Turtle/OntoEnv/Shifty/pyshacl) with pyoxigraph SPARQL speed."""
+    """Pairs rdflib Turtle with pyoxigraph SPARQL. 223P validation uses the shared baseline."""
 
     def __init__(
         self,
@@ -77,45 +77,20 @@ class RdfKnowledgeBase:
         return {"engine": "ontoenv", "triples": len(self.graph)}
 
     def validate(self, shapes_path: Path | None = None) -> dict[str, Any]:
-        """Validate graph with Shifty (primary) and pyshacl (fallback)."""
+        """Validate with ``validate_223p``. A missing Shifty or pin is an error."""
         if len(self.graph) == 0:
             return {"conforms": True, "engine": "none", "triples": 0, "report": "empty graph"}
+        from bask_223p.validate.shacl import validate_223p
 
-        shapes_graph: Graph | None = None
-        if shapes_path is not None and shapes_path.is_file():
-            shapes_graph = Graph().parse(shapes_path, format="turtle")
-
+        with tempfile.NamedTemporaryFile(suffix=".ttl", delete=False) as handle:
+            model = Path(handle.name)
         try:
-            import shifty  # type: ignore
-
-            conforms, _report_graph, report_text = shifty.validate(
-                self.graph,
-                shacl_graph=shapes_graph,
-                infer=False,
-            )
-            return {
-                "conforms": bool(conforms),
-                "engine": "shifty",
-                "triples": len(self.graph),
-                "report": str(report_text),
-            }
-        except Exception as shifty_exc:
-            from pyshacl import validate as pyshacl_validate
-
-            conforms, _report_graph, report_text = pyshacl_validate(
-                self.graph,
-                shacl_graph=shapes_graph,
-                abort_on_first=False,
-                allow_infos=True,
-                allow_warnings=True,
-            )
-            return {
-                "conforms": bool(conforms),
-                "engine": "pyshacl-fallback",
-                "shifty_note": str(shifty_exc),
-                "triples": len(self.graph),
-                "report": str(report_text),
-            }
+            model.write_text(self.graph.serialize(format="turtle"), encoding="utf-8")
+            report = validate_223p(model, shapes_path=shapes_path)
+        finally:
+            model.unlink(missing_ok=True)
+        report["triples"] = len(self.graph)
+        return report
 
     def query(self, sparql: str, *, max_rows: int = 1000) -> dict[str, Any]:
         clean = validate_read_only_sparql(sparql)

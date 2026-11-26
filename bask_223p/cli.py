@@ -14,7 +14,7 @@ from .audit.coverage import audit
 from .model.fqpn import parse_csv
 from .model.graph import build_site_graph
 from .validate.advanced import algebra_findings, batch_validate, explain, infer, shape_bindings
-from .validate.shacl import closure_from_directory, load_graph, shacl_validate
+from .validate.shacl import closure_from_directory, load_graph
 
 
 def parse_catalogs(values: list[str]) -> dict[str, Path]:
@@ -53,7 +53,11 @@ def build_parser() -> argparse.ArgumentParser:
     e2.add_argument('--limit', type=int, default=1000, help='max nodes per baskStream search during live discovery')
     e2.add_argument('--save-snapshot', type=Path, help='write the credential-free live discovery snapshot JSON for offline reruns')
     e2.add_argument('--shapes', type=Path,
-                    help='official 223P SHACL shapes (223p.ttl); run SHACL via Shifty or pyshacl')
+                    help='pinned 223p.ttl (sha256 checked); validated with OntoEnv + Shifty')
+    e2.add_argument('--imports-dir', type=Path,
+                    help='offline OntoEnv closure files (or set S223_ONTOLOGY_DIR)')
+    e2.add_argument('--cross-check', choices=['pyshacl'],
+                    help='also run pySHACL advanced=True; does not change conforms')
     e2.add_argument('--out', type=Path, default=Path('outputs/site-223p.ttl'))
     rc = sub.add_parser('reconcile', aliases=['match'],
                         help='join a Niagara export with a direct BACnet scan by device + object identifier')
@@ -84,14 +88,15 @@ def build_parser() -> argparse.ArgumentParser:
     b.add_argument('--mappings', type=Path, help='reviewed ClassURI assignments only')
     b.add_argument('--strict-names', action='store_true')
     b.add_argument('--out', type=Path, default=Path('outputs/site.ttl'))
-    v = sub.add_parser('validate', help='validate RDF data using Shifty SHACL')
+    v = sub.add_parser('validate', help='validate a 223P model with OntoEnv + Shifty defaults')
     v.add_argument('--data', type=Path, required=True)
-    v.add_argument('--shapes', action='append', type=Path, default=[])
-    v.add_argument('--imports-dir', type=Path)
-    v.add_argument('--root-iri', help='ontology IRI to obtain OntoEnv closure')
-    v.add_argument('--online', action='store_true', help='explicitly allow remote imports (default OFF)')
+    v.add_argument('--shapes', type=Path, help='pinned 223p.ttl (or set S223_SHAPES)')
+    v.add_argument('--imports-dir', type=Path, help='offline closure files (or set S223_ONTOLOGY_DIR)')
+    v.add_argument('--online', action='store_true',
+                   help='fetch the 223P import closure into --imports-dir before the offline check')
+    v.add_argument('--cross-check', choices=['pyshacl'],
+                   help='also run pySHACL advanced=True; does not change conforms')
     v.add_argument('--out', type=Path, default=Path('outputs/validation'))
-    v.add_argument('--min-severity', choices=['info','warning','violation'], default='violation')
     c = sub.add_parser('closure', help='materialize OntoEnv imports closure for local ontologies')
     c.add_argument('--imports-dir', type=Path, required=True)
     c.add_argument('--root-iri', required=True)
@@ -173,22 +178,22 @@ def main(argv: list[str] | None = None) -> int:
             graph.serialize(destination=str(args.out), format='turtle')
             results = {'triples': len(graph), 'ontologies': names, 'output': str(args.out)}
         elif args.command == 'validate':
-            if bool(args.imports_dir) != bool(args.root_iri):
-                raise ValueError('--imports-dir and --root-iri must be provided together')
-            if args.online and not args.imports_dir:
-                raise ValueError('--online only applies to OntoEnv import resolution')
-            data, shapes = load_graph(args.data), Graph()
-            for shape_file in args.shapes:
-                shapes += load_graph(shape_file)
-            deps = []
-            if args.imports_dir:
-                closure, deps = closure_from_directory(args.root_iri, args.imports_dir, args.online)
-                shapes += closure
-            if not args.shapes and not deps:
-                raise ValueError('Supply --shapes or a local --imports-dir/--root-iri pair')
-            results = shacl_validate(data, shapes, args.out, args.min_severity)
-            results['imports_closure'] = deps
-            print(json.dumps(results, indent=2))
+            from .validate.shacl import materialize_223p_closure, validate_223p
+            if args.online:
+                if args.shapes is None:
+                    raise ValueError('--online needs --shapes pointing at the pinned 223p.ttl')
+                dest = args.imports_dir or (args.out / 'closure')
+                materialize_223p_closure(args.shapes, dest)
+                args.imports_dir = dest
+            results = validate_223p(
+                args.data,
+                shapes_path=args.shapes,
+                ontology_dir=args.imports_dir,
+                cross_check=args.cross_check,
+            )
+            args.out.mkdir(parents=True, exist_ok=True)
+            (args.out / 'validation-223p.json').write_text(json.dumps(results, indent=2), encoding='utf-8')
+            print(json.dumps({k: v for k, v in results.items() if k != 'report_text'}, indent=2))
             return 0 if results['conforms'] else 1
         elif args.command == 'findings':
             results = algebra_findings(load_graph(args.data), load_graph(args.shapes), args.out)
@@ -240,6 +245,8 @@ def main(argv: list[str] | None = None) -> int:
                 discovery_limit=args.limit,
                 save_snapshot=args.save_snapshot,
                 official_shapes=args.shapes,
+                ontology_dir=args.imports_dir,
+                cross_check=args.cross_check,
             )
             print(json.dumps(results, indent=2))
             ok = results.get('validation', {}).get('conforms', True)

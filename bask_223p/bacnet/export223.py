@@ -23,6 +23,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import tempfile
 import time
 from pathlib import Path
 from typing import Any
@@ -718,79 +719,25 @@ def validate_official_223p(
     shapes_path: Path,
     *,
     inference: str = "none",
+    ontology_dir: Path | None = None,
+    cross_check: str | None = None,
 ) -> dict[str, Any]:
-    """Validate ``graph`` against official 223P SHACL shapes (``223p.ttl``)."""
-    shapes_path = Path(shapes_path)
-    if not shapes_path.is_file():
-        raise ValueError(f"223P shapes file not found: {shapes_path}")
+    """Validate ``graph`` with the OntoEnv closure and Shifty defaults.
 
-    violations: list[dict[str, str]] = []
-    warnings: list[dict[str, str]] = []
-    engine = "unknown"
-    text = ""
-    conforms = False
+    ``inference`` is accepted and ignored. The baseline does not turn SHACL-AF off.
+    """
+    del inference
+    from ..validate.shacl import validate_223p
 
-    try:
-        import shifty  # type: ignore
-        engine = "shifty"
-        result = shifty.validate_algebra(graph, str(shapes_path))
-        text = str(getattr(result, "text", "") or "")
-        for item in getattr(result, "violations", []) or []:
-            severity = str(getattr(item, "severity", "Violation") or "Violation")
-            reasons = [getattr(r, "message", str(r)) for r in (getattr(item, "reasons", None) or [])]
-            msg = "; ".join(reasons) if reasons else str(item)
-            row = {
-                "severity": severity,
-                "focus": str(getattr(item, "focus_node", "")),
-                "shape": str(getattr(item, "shape_name", "") or ""),
-                "message": msg,
-            }
-            (warnings if severity.lower() == "warning" else violations).append(row)
-        conforms = len(violations) == 0
-    except ImportError:
-        from pyshacl import validate as pyshacl_validate
-        engine = "pyshacl"
-        model_nodes = {str(s) for s in graph.subjects()}
-        union = Graph()
-        union += graph
-        union.parse(str(shapes_path), format="turtle")
-        conforms_raw, report, text = pyshacl_validate(
-            data_graph=union,
-            shacl_graph=str(shapes_path),
-            inference=inference,
-            abort_on_first=False,
-            allow_infos=True,
-            allow_warnings=True,
+    with tempfile.TemporaryDirectory() as tmp:
+        model = Path(tmp) / "model.ttl"
+        graph.serialize(destination=str(model), format="turtle")
+        return validate_223p(
+            model,
+            shapes_path=shapes_path,
+            ontology_dir=ontology_dir,
+            cross_check=cross_check,
         )
-        from rdflib.namespace import SH as _SH
-        for res in report.subjects(RDF.type, _SH.ValidationResult):
-            focus = str(report.value(res, _SH.focusNode) or "")
-            if focus not in model_nodes:
-                continue
-            sev = str(report.value(res, _SH.resultSeverity) or "").rsplit("#", 1)[-1]
-            row = {
-                "severity": sev,
-                "focus": focus,
-                "path": str(report.value(res, _SH.resultPath) or ""),
-                "message": str(report.value(res, _SH.resultMessage) or ""),
-            }
-            if sev.lower() == "warning":
-                warnings.append(row)
-            elif sev.lower() != "info":
-                violations.append(row)
-        conforms = len(violations) == 0
-        _ = conforms_raw
-
-    return {
-        "conforms": conforms,
-        "engine": engine,
-        "shapes": str(shapes_path),
-        "violations": violations,
-        "warnings": warnings,
-        "violation_count": len(violations),
-        "warning_count": len(warnings),
-        "report_text": text[:20000],
-    }
 
 
 def export_223p(
@@ -814,6 +761,8 @@ def export_223p(
     official_shapes: Path | None = None,
     niagara_out: Path | None = None,
     scan_sidecar_out: Path | None = None,
+    ontology_dir: Path | None = None,
+    cross_check: str | None = None,
 ) -> dict[str, Any]:
     """Run the full read-only discovery / scan -> external 223P TTL -> validate/coverage pipeline."""
     t0 = time.perf_counter()
@@ -882,7 +831,12 @@ def export_223p(
     validation = validate_223p_references(graph)
     official = None
     if official_shapes is not None:
-        official = validate_official_223p(graph, official_shapes)
+        official = validate_official_223p(
+            graph,
+            official_shapes,
+            ontology_dir=ontology_dir,
+            cross_check=cross_check,
+        )
         summary["official_223p"] = {k: v for k, v in official.items() if k != "report_text"}
         summary["official_223p"]["report_text"] = official.get("report_text", "")
     coverage = coverage_223p(snapshot, catalogs=catalogs)

@@ -3,6 +3,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import pytest
+
 from fastapi.testclient import TestClient
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -27,19 +29,10 @@ def test_pyoxigraph_and_shacl_validation(tmp_path):
     assert res["engine"] == "pyoxigraph"
     assert res["count"] >= 5
 
-    # Validate against a minimal valid SHACL shape (Shifty primary, pyshacl fallback)
-    shapes = tmp_path / "shapes.ttl"
-    shapes.write_text("""
-@prefix sh: <http://www.w3.org/ns/shacl#> .
-@prefix s223: <http://data.ashrae.org/standard223#> .
-@prefix ref: <https://brickschema.org/schema/Brick/ref#> .
-<http://example.org/RefShape> a sh:NodeShape ;
-  sh:targetClass s223:BACnetExternalReference ;
-  sh:property [ sh:path ref:BACnetURI ; sh:minCount 1 ] .
-""", encoding="utf-8")
-    val = kb.validate(shapes_path=shapes)
-    assert val["conforms"] is True
-    assert val["engine"] in {"shifty", "pyshacl-fallback"}
+    shapes = tmp_path / "not-the-pin.ttl"
+    shapes.write_text("@prefix owl: <http://www.w3.org/2002/07/owl#> .\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="pinned 223P"):
+        kb.validate(shapes_path=shapes)
 
 
 def test_unified_fastapi_playground_duckdb_sparql_join_and_both_sources(tmp_path):

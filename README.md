@@ -144,40 +144,25 @@ python -m bask_223p reconcile --niagara outputs/station/site-223p.ttl `
 
 ## 3. Validate against official 223P SHACL
 
-[OntoEnv](https://github.com/gtfierro/ontoenv-rs) is the ontology environment: it records
-ontology versions and resolves `owl:imports` (223P, QUDT, Brick, and whatever else the
-model imports) into one closure graph. Prefer `copy_closure` when you need a mutable
-`rdflib.Graph` (stable releases). [Shifty](https://github.com/gtfierro/shifty) (`pip install pyshifty`)
-is the SHACL and SHACL-AF engine: it validates that closure against the official 223P shapes
-and can run SHACL-AF inference.
-
-A typical flow, matching the published 223P validation guidance:
-
-1. Generate TTL with `export-223p` (it already `owl:imports` the 223P ontology IRI).
-2. Add the model and `https://open223.info/223p.ttl` to an OntoEnv (the 223P ontology IRI
-   is not always served at its own URL; that file is the current public copy).
-3. Take the imports closure of the model.
-4. Validate the model against that closure with Shifty.
-
-If those packages are not installed, pass the shapes file to this project and it will use
-[pyshacl](https://github.com/RDFLib/pyshacl) instead:
+One command, one function: `validate_223p`. Pins are `ontoenv==0.6.4` and `pyshifty==0.6.0`
+(`pip install "bask-223p[graph]"`). The 223P file is `https://open223.info/223p.ttl`,
+sha256 `08f80bd6e15052f28cdfd354bdf46ff96e5e1afdba36a4dbed5186fc1ea51c41`.
 
 ```powershell
-# download https://open223.info/223p.ttl first
-python -m bask_223p export-223p --snapshot examples/baskstream-ahu-snapshot.json `
-  --base https://example.org/lab --shapes path/to/223p.ttl `
-  --validate-out outputs/demo-223p/validate --out outputs/demo-223p/site-223p.ttl
+python -m bask_223p validate --data outputs/site-223p.ttl --shapes path/to/223p.ttl --online --out outputs/validation
 ```
 
-`conforms` is true when there are **no SHACL Violations**. Warnings are recorded and do not fail
+`--online` fetches the import closure (223P, QUDT 3.4.0 `qudt-all`, SHACL, SKOS, VAEM) into
+the output directory. The check itself is offline and strict: OntoEnv `copy_closure`, then
+`shifty.validate` with its defaults and `minimum_severity="Violation"`. A missing engine or
+a short closure is an error. `--cross-check pyshacl` runs pySHACL 0.40.2 with `advanced=True`
+and does not set `conforms`.
+
+`export-223p --shapes` and live-ingest `POST /api/model/validate` call the same function.
+`conforms` is true when there are no SHACL Violations. Warnings are recorded and do not fail
 the run. An external-reference graph commonly warns that an `ObservableProperty` is not pointed
 at by a `s223:Sensor` (`s223:observes`). That is expected until a reviewer authors sensors and
-connection points. Violations in references, quantity kinds, enumeration kinds, and typings are
-treated as errors.
-
-The official shapes used for the development check were the public 223P ontology + SHACL
-(`223p.ttl`). Against the bundled AHU snapshot: **0 Violations**, and the expected Sensor
-`observes` Warnings only.
+connection points.
 
 ## 4. Inventory references, bindings and nHaystack check
 
@@ -197,14 +182,14 @@ SHACL engine as above, exposed as `closure`, `validate`, `infer`, `findings`, an
 ```powershell
 python -m bask_223p audit --requirements path/to/requirements.csv --catalog Brick=path/to/brick.ttl --out outputs/audit
 python -m bask_223p build --csv examples/bacnet_points.csv --base https://example.org/demo --out outputs/site.ttl
-python -m bask_223p validate --data examples/broken-site.ttl --shapes examples/shapes/site-shapes.ttl --out outputs/failed
+python -m bask_223p validate --data outputs/site-223p.ttl --shapes path/to/223p.ttl --imports-dir path/to/closure
 ```
 
 Exit codes: 0 ok, 1 non-conformance / strict mismatch, 2 bad input or setup error.
 
 ## 6. Examples: live telemetry ingest and SPARQL playground
 
-* [`examples/live-ingest/`](examples/live-ingest/README.md) — unified read-only FastAPI service and CLI (`--source baskstream | bacnet | both`) that pairs a `pyoxigraph` SPARQL + `OntoEnv`/`Shifty` (`pyshacl` fallback) RDF layer with a local **DuckDB** (`telemetry` keyed by `bacnet://` ref) and **CSV** time-series sink, a `/playground` SPARQL + DuckDB SQL UI, WebSocket `/live`, an Open-FDD DuckDB SQL fault prototype notebook, and `niagara` / `bacnet` Docker Compose profiles.
+* [`examples/live-ingest/`](examples/live-ingest/README.md) — unified read-only FastAPI service and CLI (`--source baskstream | bacnet | both`) that pairs a `pyoxigraph` SPARQL layer with a local **DuckDB** (`telemetry` keyed by `bacnet://` ref) and **CSV** time-series sink, a `/playground` SPARQL + DuckDB SQL UI, WebSocket `/live`, an Open-FDD DuckDB SQL fault prototype notebook, and `niagara` / `bacnet` Docker Compose profiles. 223P validation calls `validate_223p`.
 * [`examples/sparql-playground/`](examples/sparql-playground/README.md) — self-contained Brick + SPARQL + SQLite tutorial API (`brickts`), lessons, `.rq` query library, sample building dataset, and Docker setup (archived from `bbartling/sparql-playground`).
 
 ## Package layout

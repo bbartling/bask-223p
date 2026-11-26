@@ -6,9 +6,9 @@ A single-codebase, strictly read-only FastAPI service and CLI showing how data-l
 
 ## Design choices (Python 3.14 stack)
 
-* **RDF query path — `pyoxigraph` + `rdflib` + `OntoEnv` + `Shifty` (`pyshacl` fallback):**
+* **RDF query path — `pyoxigraph` + `rdflib`. 223P checks call `validate_223p`:**
   * **`pyoxigraph==0.5.13`** (Rust-backed Oxigraph SPARQL 1.1 store) executes `SELECT` / `ASK` / `CONSTRUCT` / `DESCRIBE` queries natively without Python GIL overhead on property paths and joins.
-  * **`rdflib==7.6.0`** handles Turtle parsing/serialization and integrates cleanly with **`ontoenv==0.6.4`** (resolving `owl:imports` closures) and **`pyshifty==0.6.0`** (primary SHACL engine, with **`pyshacl==0.40.2`** as fallback).
+  * **`rdflib==7.6.0`** parses Turtle. Validation is `ontoenv==0.6.4` plus `pyshifty==0.6.0` through `validate_223p`. There is no pySHACL fallback. `pyshacl==0.40.2` is only the opt-in `--cross-check pyshacl`.
 * **Local time-series store — `DuckDbSink` (`duckdb==2.0.1`) + `CsvSink` + `StdoutSink`:**
   * `telemetry` table keyed by `ref` (`bacnet://<device>/<type>,<instance>`), `timestamp_utc` (`TIMESTAMPTZ`), `site`, `source`, `device`, `object`, `property`, `value_num`, `value_text`, `units`, `status`.
   * `CsvSink` writes `timestamp_utc,site,source,device,object,property,value,units,status` cleanly alongside DuckDB.
