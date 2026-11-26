@@ -101,6 +101,24 @@ class TokenService:
             "expires_in": self.access_ttl,
         }
 
+    def issue_access(self, user: EdgeUser) -> dict[str, Any]:
+        """Short-lived access token for the WebSocket. No refresh token."""
+        now = int(time.time())
+        expires = min(self.access_ttl, 300)
+        expires = max(60, expires)
+        access = jwt.encode(
+            {
+                "sub": user.username,
+                "typ": "access",
+                "iat": now,
+                "exp": now + expires,
+                "jti": uuid.uuid4().hex,
+            },
+            self.secret,
+            algorithm="HS256",
+        )
+        return {"access_token": access, "token_type": "Bearer", "expires_in": expires}
+
     def refresh(self, refresh_token: str) -> dict[str, Any] | None:
         payload = self._decode(refresh_token, expected_typ="refresh")
         if not payload:
@@ -161,8 +179,36 @@ def load_auth_from_env() -> AuthBundle:
 
 
 def attach_auth_routes(app, auth: AuthBundle) -> None:
-    auth.session.initialize(app, cookie_options={"max_age": auth.session_ttl, "path": "/", "http_only": True})
+    auth.session.initialize(
+        app,
+        cookie_options={
+            "max_age": auth.session_ttl,
+            "path": "/",
+            "http_only": True,
+            "secure": True,
+        },
+    )
     auth.login.user_loader(load_user_factory(auth.users))
+
+    # Microdot sets the session cookie in a request after-handler, which runs
+    # after app after-handlers. Append SameSite once that cookie exists.
+    _update_session = auth.session.update
+
+    def _update_session_samesite(request, session):
+        _update_session(request, session)
+
+        @request.after_request
+        async def _samesite(request, response):  # noqa: ARG001
+            raw = response.headers.get("Set-Cookie")
+            if isinstance(raw, list):
+                response.headers["Set-Cookie"] = [
+                    item if "samesite=" in item.lower() else item + "; SameSite=Strict" for item in raw
+                ]
+            elif isinstance(raw, str) and "samesite=" not in raw.lower():
+                response.headers["Set-Cookie"] = [raw + "; SameSite=Strict"]
+            return response
+
+    auth.session.update = _update_session_samesite  # type: ignore[method-assign]
 
     @auth.token_auth.authenticate
     async def check_token(request, token):  # noqa: ARG001
@@ -231,7 +277,7 @@ def attach_auth_routes(app, auth: AuthBundle) -> None:
     @auth.login
     async def ws_token(request):
         user = await auth.login.get_current_user(request)
-        return auth.tokens.issue_pair(user)
+        return auth.tokens.issue_access(user)
 
 def hash_password(password: str, *, salt: str | None = None, iterations: int = 310_000) -> str:
     """Offline helper for EDGE_USERS entries."""

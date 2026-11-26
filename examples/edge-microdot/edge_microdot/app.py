@@ -7,7 +7,7 @@ import logging
 import os
 from pathlib import Path
 from typing import Any, Sequence
-from urllib.parse import unquote
+from urllib.parse import unquote, urlparse
 
 from microdot import Microdot, Response, send_file
 from microdot.session import with_session
@@ -364,6 +364,12 @@ def create_app(
     async def live_ws(request, session):
         if request.args.get("token"):
             return Response("Unauthorized", status_code=401)
+        origin = request.headers.get("Origin")
+        if origin:
+            parsed = urlparse(origin)
+            host = request.headers.get("Host") or ""
+            if parsed.scheme not in {"http", "https"} or parsed.netloc.lower() != host.lower():
+                return Response("Forbidden", status_code=403)
         gate = require_token(auth, request)
         if isinstance(gate, Response):
             stored = session.get("api_access") if session is not None else None

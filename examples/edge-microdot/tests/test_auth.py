@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import time
+from pathlib import Path
 
 import jwt
 import pytest
@@ -136,6 +137,71 @@ def test_login_logout_flow(auth_app):
         assert out.status_code == 302
 
     asyncio.run(_run())
+
+
+def test_login_cookie_is_secure_and_samesite(auth_app):
+    from microdot.test_client import TestClient
+
+    async def _run():
+        client = TestClient(auth_app)
+        login = await client.post(
+            "/login",
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            body="username=operator&password=operator-pass",
+        )
+        cookie = login.headers.get("Set-Cookie") or ""
+        if isinstance(cookie, list):
+            cookie = "; ".join(cookie)
+        assert "HttpOnly" in cookie
+        assert "Secure" in cookie
+        assert "SameSite=Strict" in cookie
+
+    asyncio.run(_run())
+
+
+def test_live_rejects_foreign_origin(auth_app):
+    from microdot.test_client import TestClient
+
+    async def _run():
+        client = TestClient(auth_app)
+        await client.post(
+            "/login",
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            body="username=operator&password=operator-pass",
+        )
+        denied = await client.get("/live", headers={"Origin": "https://other.example"})
+        assert denied.status_code == 403
+        allowed = await client.get("/live", headers={"Origin": "http://example.com:1234"})
+        assert allowed.status_code != 403
+
+    asyncio.run(_run())
+
+
+def test_ws_token_is_access_only(auth_app):
+    from microdot.test_client import TestClient
+
+    async def _run():
+        client = TestClient(auth_app)
+        await client.post(
+            "/login",
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            body="username=operator&password=operator-pass",
+        )
+        resp = await client.get("/auth/ws-token")
+        assert resp.status_code == 200
+        assert "access_token" in resp.json
+        assert "refresh_token" not in resp.json
+        assert resp.json["expires_in"] <= 300
+
+    asyncio.run(_run())
+
+
+def test_dashboard_fault_cells_use_text_content():
+    html = (
+        Path(__file__).resolve().parents[1] / "edge_microdot" / "static" / "index.html"
+    ).read_text(encoding="utf-8")
+    assert "tr.innerHTML" not in html
+    assert "td.textContent" in html
 
 
 def test_startup_fails_when_secret_key_unset(monkeypatch):
