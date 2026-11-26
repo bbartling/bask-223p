@@ -1144,6 +1144,10 @@ class HistoryStore:
                     zf.write(result_pq, arcname="rule_result.parquet")
                 return buf.getvalue()
 
+    def query(self, sql: str, params: list[Any] | None = None) -> list[tuple]:
+        with self._lock:
+            return list(self.conn.execute(sql, params or []).fetchall())
+
     def query_history(
         self,
         *,

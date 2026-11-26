@@ -176,9 +176,13 @@ def build_runtime(argv: Sequence[str] | None = None) -> tuple:
     history = HistoryStore(db_path, max_bytes=max_mb * 1024 * 1024, retention_hours=retention_hours)
     fdd = FddEngine(history=history, targets=targets)
     from edge_microdot.openfdd_pin import startup_lines
+    from edge_microdot.ui_api import applicability_lines
 
     log = logging.getLogger("edge_microdot")
     for line in startup_lines():
+        log.info("%s", line)
+    bound = {str(row[0]) for row in history.query("SELECT DISTINCT role FROM fdd.point WHERE role <> ''")}
+    for line in applicability_lines(bound):
         log.info("%s", line)
     enable_sparql = _sparql_enabled(cfg)
     if not enable_sparql:

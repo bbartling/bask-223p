@@ -118,6 +118,8 @@ The client uses form SCRAM first, then **HTTP Basic** on `/stream/health` and th
 
 Microdot built-ins, with Caddy in front for LAN TLS (`Caddyfile`, `tls internal`). The dashboard WebSocket is `wss://` on HTTPS and authenticates with the session cookie or an `Authorization: Bearer` header. Tokens are not accepted on the query string.
 
+`/api/*` implements Open-FDD UI contract 1.0.0 (`contract/open-fdd-ui-api.yaml`). `confirm_min` is the only tuner and stays at each rule's shipped default; writes stay off unless `EDGE_RULES_WRITE=1`. `EDGE_ROLES` is `user:viewer` or `user:operator`. Startup logs which rules apply and which are skipped because a required 223P role is missing. `OPENFDD_VERSION` is `5.0.22`. `scripts/fetch_openfdd.py` vendors the release zips after a sha256 check and does nothing until that tag exists.
+
 | Mechanism | Use |
 | --- | --- |
 | `TokenAuth` | API routes (`Authorization: Bearer …`) |
