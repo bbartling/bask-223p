@@ -2,6 +2,7 @@
 name = "brickts"
 version = "0.1.0"
 description = "Brick timeseries SPARQL tutorial — SQLite TSDB stand-in + read-only SPARQL API"
+license = {text = "MIT"}
 requires-python = ">=3.12"
 dependencies = [
     "aiosqlite>=0.22.1",

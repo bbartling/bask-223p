@@ -6,6 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "live-ingest"
 version = "0.1.0"
 description = "Reference phase-2 live BACnet/baskStream ingest service with FastAPI, pyoxigraph SPARQL, OntoEnv/Shifty, and DuckDB"
+license = {text = "MIT"}
 requires-python = ">=3.14"
 dependencies = [
     "fastapi==0.165.0",
