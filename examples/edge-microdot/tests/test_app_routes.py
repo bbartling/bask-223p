@@ -22,6 +22,7 @@ def _auth_disabled():
 @pytest.fixture
 def edge_app(tmp_path, monkeypatch):
     monkeypatch.setenv("EDGE_AUTH_DISABLED", "1")
+    monkeypatch.setenv("EDGE_ALLOW_UNAUTHENTICATED", "1")
     targets = [
         PointTarget(site="demo", device="10001", object_id=f"analog-input,{i}", units="C")
         for i in range(1, 6)

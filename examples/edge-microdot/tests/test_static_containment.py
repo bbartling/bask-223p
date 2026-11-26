@@ -17,7 +17,7 @@ from edge_microdot.sources.fake import FakePollSource
 from edge_microdot.sparql_kb import SparqlKb
 
 STATIC_DIR = Path(__file__).resolve().parents[1] / "edge_microdot" / "static"
-SENTINEL = "static-containment-sentinel"
+SENTINEL = "static-containment-sentinel-32b-min"
 
 
 def _body(resp) -> bytes:
@@ -30,6 +30,7 @@ def _body(resp) -> bytes:
 @pytest.fixture
 def edge_app(tmp_path, monkeypatch):
     monkeypatch.setenv("EDGE_AUTH_DISABLED", "1")
+    monkeypatch.setenv("EDGE_ALLOW_UNAUTHENTICATED", "1")
     monkeypatch.setenv("EDGE_SECRET_KEY", SENTINEL)
     targets = [PointTarget(site="demo", device="1", object_id="analog-input,1", units="C")]
     history = HistoryStore(tmp_path / "h.duckdb")

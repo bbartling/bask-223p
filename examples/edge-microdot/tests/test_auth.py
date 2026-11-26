@@ -45,6 +45,7 @@ def auth_app(tmp_path, monkeypatch):
         flush_interval_s=3600,
         fdd_interval_s=3600,
     )
+    app.auth = auth
     return app
 
 
@@ -75,7 +76,7 @@ def test_invalid_token_rejected(auth_app):
 
 
 def test_expired_token_rejected(monkeypatch):
-    secret = "exp-secret"
+    secret = "exp-secret-at-least-32-bytes-long"
     svc = TokenService(secret, access_ttl=1)
     now = int(time.time())
     expired = jwt.encode(
@@ -219,5 +220,96 @@ def test_startup_fails_when_secret_key_blank(monkeypatch):
 def test_startup_fails_when_secret_unset_even_if_auth_disabled(monkeypatch):
     monkeypatch.delenv("EDGE_SECRET_KEY", raising=False)
     monkeypatch.setenv("EDGE_AUTH_DISABLED", "1")
+    monkeypatch.setenv("EDGE_ALLOW_UNAUTHENTICATED", "1")
     with pytest.raises(RuntimeError, match="EDGE_SECRET_KEY"):
         load_auth_from_env()
+
+
+def test_startup_rejects_short_secret(monkeypatch):
+    monkeypatch.setenv("EDGE_SECRET_KEY", "too-short")
+    with pytest.raises(RuntimeError, match="32 bytes"):
+        load_auth_from_env()
+
+
+def test_auth_disabled_requires_explicit_allow(monkeypatch):
+    monkeypatch.setenv("EDGE_AUTH_DISABLED", "1")
+    monkeypatch.delenv("EDGE_ALLOW_UNAUTHENTICATED", raising=False)
+    with pytest.raises(RuntimeError, match="EDGE_ALLOW_UNAUTHENTICATED"):
+        load_auth_from_env()
+
+
+def test_refresh_is_single_use_and_checks_the_user(auth_app):
+    from microdot.test_client import TestClient
+
+    async def _run():
+        client = TestClient(auth_app)
+        first = await client.post("/auth/token", headers=_basic_header("operator", "operator-pass"))
+        refresh = first.json["refresh_token"]
+        import json
+
+        renewed = await client.post(
+            "/auth/refresh",
+            headers={"Content-Type": "application/json"},
+            body=json.dumps({"refresh_token": refresh}),
+        )
+        assert renewed.status_code == 200
+        again = await client.post(
+            "/auth/refresh",
+            headers={"Content-Type": "application/json"},
+            body=json.dumps({"refresh_token": refresh}),
+        )
+        assert again.status_code == 401
+        auth_app.auth.users._by_name.clear()
+        fresh = renewed.json["refresh_token"]
+        gone = await client.post(
+            "/auth/refresh",
+            headers={"Content-Type": "application/json"},
+            body=json.dumps({"refresh_token": fresh}),
+        )
+        assert gone.status_code == 401
+
+    asyncio.run(_run())
+
+
+def test_login_rate_limit_returns_429(auth_app):
+    from microdot.test_client import TestClient
+
+    async def _run():
+        client = TestClient(auth_app)
+        last = None
+        for _ in range(9):
+            last = await client.post(
+                "/login",
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+                body="username=stranger&password=wrong-pass",
+            )
+        assert last is not None
+        assert last.status_code == 429
+
+    asyncio.run(_run())
+
+
+def test_session_cookie_has_exp(auth_app):
+    from edge_microdot.security import _subkey
+    from microdot.test_client import TestClient
+
+    async def _run():
+        client = TestClient(auth_app)
+        login = await client.post(
+            "/login",
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            body="username=operator&password=operator-pass",
+        )
+        cookie = login.headers.get("Set-Cookie") or ""
+        if isinstance(cookie, list):
+            cookie = "; ".join(cookie)
+        token = ""
+        for part in cookie.split(";"):
+            part = part.strip()
+            if part.startswith("session="):
+                token = part.split("=", 1)[1]
+        secret = _subkey("unit-test-secret-key-32-bytes-minimum", "edge-session")
+        payload = jwt.decode(token, secret, algorithms=["HS256"])
+        assert payload["exp"] > int(time.time())
+
+    asyncio.run(_run())

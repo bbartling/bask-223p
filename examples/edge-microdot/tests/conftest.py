@@ -15,7 +15,7 @@ def _pbkdf2_hash(password: str, *, salt: str = "testsalt01", iterations: int = 3
 
 @pytest.fixture(autouse=True)
 def _auth_env(monkeypatch):
-    monkeypatch.setenv("EDGE_SECRET_KEY", "unit-test-secret-key")
+    monkeypatch.setenv("EDGE_SECRET_KEY", "unit-test-secret-key-32-bytes-minimum")
     monkeypatch.setenv("EDGE_USERS", f"operator:{_pbkdf2_hash('operator-pass')}")
     monkeypatch.delenv("EDGE_AUTH_DISABLED", raising=False)
 

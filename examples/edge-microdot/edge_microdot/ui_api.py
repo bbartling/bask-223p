@@ -1,6 +1,7 @@
 """Open-FDD UI REST contract 1.0.0 (open-fdd #1806 / #1807)."""
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import re
@@ -14,6 +15,7 @@ from microdot import Response
 
 from edge_microdot.fdd import RULE_FILE_IDS
 from edge_microdot.role_contract import INPUT_NAME, ROLE_UNITS
+from edge_microdot.security import client_addr, login_limited
 
 CONTRACT_VERSION = "1.0.0"
 ACCESS_TTL = 900
@@ -154,7 +156,7 @@ def _limit(request) -> int | Response:
 
 
 def attach_ui_api(app, *, history, auth, sparql, site: str) -> None:
-    refresh_ids: set[str] = set()
+    refresh_ids: dict[str, int] = {}
     tuned: dict[str, int] = {}
     secret = auth.tokens.secret
 
@@ -169,24 +171,32 @@ def attach_ui_api(app, *, history, auth, sparql, site: str) -> None:
             name, role = part.split(":", 1)
             if name.strip() == username and role.strip() in {"viewer", "operator", "admin"}:
                 return role.strip()
-        return "operator"
+        return "viewer"
 
-    def issue(username: str, *, typ: str, ttl: int) -> tuple[str, str]:
+    def remember_refresh(jti: str, exp: int) -> None:
+        now = int(time.time())
+        for old, old_exp in list(refresh_ids.items()):
+            if old_exp <= now:
+                del refresh_ids[old]
+        refresh_ids[jti] = exp
+
+    def issue(username: str, *, typ: str, ttl: int) -> tuple[str, str, int]:
         now = int(time.time())
         jti = uuid.uuid4().hex
+        exp = now + ttl
         token = jwt.encode(
             {
                 "sub": username,
                 "role": role_of(username),
                 "typ": typ,
                 "iat": now,
-                "exp": now + ttl,
+                "exp": exp,
                 "jti": jti,
             },
             secret,
             algorithm="HS256",
         )
-        return token, jti
+        return token, jti, exp
 
     def decode(token: str, typ: str) -> dict[str, Any] | None:
         try:
@@ -475,7 +485,7 @@ def attach_ui_api(app, *, history, auth, sparql, site: str) -> None:
         return _error("not_found", "This host does not authenticate through /api/auth", 404)
 
     @app.post("/api/auth/login")
-    def login(request):
+    async def login(request):
         off = _auth_off()
         if off:
             return off
@@ -489,11 +499,13 @@ def attach_ui_api(app, *, history, auth, sparql, site: str) -> None:
         password = body["password"]
         if not isinstance(username, str) or not isinstance(password, str) or not username or not password:
             return _error("bad_request", "username and password are required", 400)
-        if not auth.users.verify_password(username, password):
+        if login_limited(f"ui:{client_addr(request)}:{username}"):
+            return _error("rate_limited", "Too many attempts", 429)
+        if not await asyncio.to_thread(auth.users.verify_password, username, password):
             return _error("invalid_credentials", "Invalid credentials", 401)
-        access, _jti = issue(username, typ="ui-access", ttl=ACCESS_TTL)
-        refresh, rid = issue(username, typ="ui-refresh", ttl=REFRESH_TTL)
-        refresh_ids.add(rid)
+        access, _jti, _exp = issue(username, typ="ui-access", ttl=ACCESS_TTL)
+        refresh, rid, refresh_exp = issue(username, typ="ui-refresh", ttl=REFRESH_TTL)
+        remember_refresh(rid, refresh_exp)
         resp = Response(
             {
                 "access_token": access,
@@ -511,13 +523,16 @@ def attach_ui_api(app, *, history, auth, sparql, site: str) -> None:
             return off
         token = cookie_value(request)
         payload = decode(token or "", "ui-refresh") if token else None
-        if not payload or payload.get("jti") not in refresh_ids:
+        if not payload or str(payload.get("jti")) not in refresh_ids:
             return _error("unauthorized", "Refresh token is not valid", 401)
-        refresh_ids.discard(str(payload["jti"]))
         username = str(payload["sub"])
-        access, _jti = issue(username, typ="ui-access", ttl=ACCESS_TTL)
-        new_refresh, rid = issue(username, typ="ui-refresh", ttl=REFRESH_TTL)
-        refresh_ids.add(rid)
+        if auth.users.get(username) is None:
+            refresh_ids.pop(str(payload["jti"]), None)
+            return _error("unauthorized", "Refresh token is not valid", 401)
+        refresh_ids.pop(str(payload["jti"]), None)
+        access, _jti, _exp = issue(username, typ="ui-access", ttl=ACCESS_TTL)
+        new_refresh, rid, refresh_exp = issue(username, typ="ui-refresh", ttl=REFRESH_TTL)
+        remember_refresh(rid, refresh_exp)
         resp = Response(
             {
                 "access_token": access,
@@ -536,7 +551,7 @@ def attach_ui_api(app, *, history, auth, sparql, site: str) -> None:
         token = cookie_value(request)
         payload = decode(token or "", "ui-refresh") if token else None
         if payload:
-            refresh_ids.discard(str(payload.get("jti")))
+            refresh_ids.pop(str(payload.get("jti")), None)
         resp = Response(b"", status_code=204)
         return refresh_cookie(resp, "", max_age=0)
 

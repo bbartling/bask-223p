@@ -130,11 +130,12 @@ Environment:
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `EDGE_SECRET_KEY` | random at startup if unset | HMAC secret for JWT + session |
-| `EDGE_USERS` | — | `user:pbkdf2_sha256$iter$salt$hash` (semicolon-separated) |
+| `EDGE_SECRET_KEY` | required, 32 bytes | HMAC root secret. Session and token keys are derived from it. `EDGE_SECRET_KEY_FILE` overrides it |
+| `EDGE_USERS` | — | `user:pbkdf2_sha256$iter$salt$hash` (semicolon-separated). `EDGE_USERS_FILE` overrides it |
 | `EDGE_TOKEN_TTL` | `3600` | Access token `exp` (seconds) |
 | `EDGE_SESSION_TTL` | `EDGE_TOKEN_TTL` | Session cookie lifetime |
-| `EDGE_AUTH_DISABLED` | off | Test/demo only |
+| `EDGE_AUTH_DISABLED` | off | Test/demo only. Refused unless `EDGE_ALLOW_UNAUTHENTICATED=1` |
+| `EDGE_ROLES` | viewer | `user:viewer`, `user:operator`, or `user:admin` |
 
 Hash a password for `EDGE_USERS`:
 

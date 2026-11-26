@@ -1,9 +1,11 @@
 """Microdot TokenAuth, BasicAuth, and session login (secrets from env only)."""
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import hmac
+import logging
 import os
 import time
 import uuid
@@ -16,6 +18,13 @@ from microdot import Response, redirect
 from microdot.auth import BasicAuth, TokenAuth
 from microdot.login import Login
 from microdot.session import Session, with_session
+
+LOG = logging.getLogger("edge.security")
+_DUMMY_HASH = (
+    "pbkdf2_sha256$310000$"
+    "00112233445566778899aabbccddeeff$"
+    "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA"
+)
 
 
 @dataclass(slots=True)
@@ -49,19 +58,22 @@ class UserDirectory:
     def verify_password(self, username: str, password: str) -> bool:
         digest = self._by_name.get(username)
         if not digest:
+            self._pbkdf2(password, _DUMMY_HASH)
             return False
-        if digest.startswith("pbkdf2_sha256$"):
-            try:
-                _tag, iter_s, salt, expected = digest.split("$", 3)
-                iterations = int(iter_s)
-                got = hashlib.pbkdf2_hmac(
-                    "sha256", password.encode("utf-8"), salt.encode("utf-8"), iterations
-                )
-                exp = base64.urlsafe_b64decode(expected + "=" * (-len(expected) % 4))
-                return hmac.compare_digest(got, exp)
-            except (ValueError, TypeError):
-                return False
-        return False
+        return self._pbkdf2(password, digest)
+
+    @staticmethod
+    def _pbkdf2(password: str, digest: str) -> bool:
+        try:
+            _tag, iter_s, salt, expected = digest.split("$", 3)
+            iterations = int(iter_s)
+            got = hashlib.pbkdf2_hmac(
+                "sha256", password.encode("utf-8"), salt.encode("utf-8"), iterations
+            )
+            exp = base64.urlsafe_b64decode(expected + "=" * (-len(expected) % 4))
+            return hmac.compare_digest(got, exp)
+        except (ValueError, TypeError):
+            return False
 
 
 class TokenService:
@@ -69,6 +81,7 @@ class TokenService:
         self.secret = secret
         self.access_ttl = max(60, int(access_ttl))
         self.refresh_ttl = refresh_ttl if refresh_ttl is not None else self.access_ttl * 12
+        self.refresh_exp: dict[str, int] = {}
 
     def issue_pair(self, user: EdgeUser) -> dict[str, Any]:
         now = int(time.time())
@@ -83,13 +96,17 @@ class TokenService:
             self.secret,
             algorithm="HS256",
         )
+        refresh_jti = uuid.uuid4().hex
+        refresh_exp = now + self.refresh_ttl
+        self._prune_refresh(now)
+        self.refresh_exp[refresh_jti] = refresh_exp
         refresh = jwt.encode(
             {
                 "sub": user.username,
                 "typ": "refresh",
                 "iat": now,
-                "exp": now + self.refresh_ttl,
-                "jti": uuid.uuid4().hex,
+                "exp": refresh_exp,
+                "jti": refresh_jti,
             },
             self.secret,
             algorithm="HS256",
@@ -119,11 +136,25 @@ class TokenService:
         )
         return {"access_token": access, "token_type": "Bearer", "expires_in": expires}
 
-    def refresh(self, refresh_token: str) -> dict[str, Any] | None:
+    def refresh(self, refresh_token: str, users: UserDirectory | None = None) -> dict[str, Any] | None:
         payload = self._decode(refresh_token, expected_typ="refresh")
         if not payload:
             return None
-        return self.issue_pair(EdgeUser(str(payload["sub"])))
+        username = str(payload.get("sub") or "")
+        if users is not None and users.get(username) is None:
+            return None
+        jti = str(payload.get("jti") or "")
+        now = int(time.time())
+        self._prune_refresh(now)
+        if not jti or jti not in self.refresh_exp:
+            return None
+        del self.refresh_exp[jti]
+        return self.issue_pair(EdgeUser(username))
+
+    def _prune_refresh(self, now: int) -> None:
+        expired = [jti for jti, exp in self.refresh_exp.items() if exp <= now]
+        for jti in expired:
+            del self.refresh_exp[jti]
 
     def verify_access(self, token: str) -> EdgeUser | None:
         payload = self._decode(token, expected_typ="access")
@@ -153,18 +184,43 @@ class AuthBundle:
     session_ttl: int
 
 
+def _subkey(secret: str, info: str) -> str:
+    return hmac.new(secret.encode("utf-8"), info.encode("ascii"), hashlib.sha256).hexdigest()
+
+
+def _read_secret() -> str:
+    path = os.environ.get("EDGE_SECRET_KEY_FILE", "").strip()
+    if path:
+        return Path(path).read_text(encoding="utf-8").strip()
+    return os.environ.get("EDGE_SECRET_KEY", "").strip()
+
+
+def _read_users() -> str | None:
+    path = os.environ.get("EDGE_USERS_FILE", "").strip()
+    if path:
+        return Path(path).read_text(encoding="utf-8")
+    return os.environ.get("EDGE_USERS")
+
+
 def load_auth_from_env() -> AuthBundle:
     disabled = os.environ.get("EDGE_AUTH_DISABLED", "").strip().lower() in {"1", "true", "yes"}
-    secret = os.environ.get("EDGE_SECRET_KEY", "").strip()
+    secret = _read_secret()
     if not secret:
         raise RuntimeError("EDGE_SECRET_KEY is unset; refusing to start")
+    if len(secret.encode("utf-8")) < 32:
+        raise RuntimeError("EDGE_SECRET_KEY must be at least 32 bytes")
+    if disabled:
+        allow = os.environ.get("EDGE_ALLOW_UNAUTHENTICATED", "").strip().lower() in {"1", "true", "yes"}
+        if not allow:
+            raise RuntimeError("EDGE_AUTH_DISABLED requires EDGE_ALLOW_UNAUTHENTICATED=1")
+        LOG.warning("authentication is disabled because EDGE_ALLOW_UNAUTHENTICATED=1")
     access_ttl = int(os.environ.get("EDGE_TOKEN_TTL", "3600"))
     session_ttl = int(os.environ.get("EDGE_SESSION_TTL", str(access_ttl)))
-    users = UserDirectory(os.environ.get("EDGE_USERS"))
-    tokens = TokenService(secret, access_ttl=access_ttl)
+    users = UserDirectory(_read_users())
+    tokens = TokenService(_subkey(secret, "edge-token"), access_ttl=access_ttl)
     token_auth = TokenAuth()
     basic_auth = BasicAuth(realm="edge-microdot token issue")
-    session = Session(secret_key=secret)
+    session = Session(secret_key=_subkey(secret, "edge-session"))
     login_mgr = Login(login_url="/login")
     return AuthBundle(
         disabled=disabled,
@@ -176,6 +232,27 @@ def load_auth_from_env() -> AuthBundle:
         login=login_mgr,
         session_ttl=session_ttl,
     )
+
+
+_LOGIN_HITS: dict[str, list[float]] = {}
+
+
+def login_limited(key: str, *, limit: int = 8, window: float = 60.0) -> bool:
+    now = time.monotonic()
+    recent = [stamp for stamp in _LOGIN_HITS.get(key, []) if now - stamp < window]
+    if len(recent) >= limit:
+        _LOGIN_HITS[key] = recent
+        return True
+    recent.append(now)
+    _LOGIN_HITS[key] = recent
+    return False
+
+
+def client_addr(request) -> str:
+    addr = getattr(request, "client_addr", None) or "local"
+    if isinstance(addr, tuple):
+        return str(addr[0])
+    return str(addr)
 
 
 def attach_auth_routes(app, auth: AuthBundle) -> None:
@@ -210,6 +287,15 @@ def attach_auth_routes(app, auth: AuthBundle) -> None:
 
     auth.session.update = _update_session_samesite  # type: ignore[method-assign]
 
+    _encode = auth.session.encode
+
+    def _encode_exp(payload, secret_key=None):
+        data = dict(payload)
+        data.setdefault("exp", int(time.time()) + auth.session_ttl)
+        return _encode(data, secret_key)
+
+    auth.session.encode = _encode_exp  # type: ignore[method-assign]
+
     @auth.token_auth.authenticate
     async def check_token(request, token):  # noqa: ARG001
         if auth.disabled:
@@ -220,7 +306,7 @@ def attach_auth_routes(app, auth: AuthBundle) -> None:
     async def check_basic(request, username, password):  # noqa: ARG001
         if auth.disabled:
             return EdgeUser("anonymous")
-        if auth.users.verify_password(username, password):
+        if await asyncio.to_thread(auth.users.verify_password, username, password):
             return EdgeUser(username)
         return None
 
@@ -243,8 +329,11 @@ def attach_auth_routes(app, auth: AuthBundle) -> None:
         else:
             username = str(body.get("username") or "")
             password = str(body.get("password") or "")
-        user = auth.users.get(username)
-        if not user or not auth.users.verify_password(username, password):
+        if login_limited(f"form:{client_addr(request)}:{username}"):
+            return Response("Too many attempts", status_code=429)
+        ok = await asyncio.to_thread(auth.users.verify_password, username, password)
+        user = auth.users.get(username) if ok else None
+        if not user:
             return Response("Invalid credentials", status_code=401)
         session["api_access"] = auth.tokens.issue_pair(user)["access_token"]
         return await auth.login.login_user(request, user, remember=False, redirect_url="/")
@@ -268,7 +357,7 @@ def attach_auth_routes(app, auth: AuthBundle) -> None:
             return auth.tokens.issue_pair(EdgeUser("anonymous"))
         body = request.json or {}
         token = str(body.get("refresh_token") or "")
-        pair = auth.tokens.refresh(token)
+        pair = auth.tokens.refresh(token, auth.users)
         if not pair:
             return Response("Invalid or expired refresh token", status_code=401)
         return pair
