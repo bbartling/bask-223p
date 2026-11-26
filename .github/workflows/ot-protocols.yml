@@ -1,0 +1,74 @@
+name: ot-protocols
+on:
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.15"
+      - name: Install the edge app at its pinned dependencies
+        run: |
+          python -m pip install -e .
+          python -m pip install -e "./examples/edge-microdot[sparql,dev,modbus]"
+      - name: Compare OT protocol pins with PyPI
+        id: watch
+        run: |
+          python scripts/ot_protocol_watch.py --verify
+          python scripts/ot_protocol_watch.py --report > "$RUNNER_TEMP/ot-watch.json"
+          python - <<'PY'
+          import json, os
+          body = json.load(open(os.environ["RUNNER_TEMP"] + "/ot-watch.json"))
+          path = os.environ["GITHUB_OUTPUT"]
+          with open(path, "a", encoding="utf-8") as handle:
+              handle.write("updates=" + str(len(body["updates"])) + "\n")
+          PY
+      - name: Test the latest OT protocol releases
+        id: tests
+        if: steps.watch.outputs.updates != '0'
+        continue-on-error: true
+        run: |
+          python scripts/ot_protocol_watch.py --install-latest
+          python -m pytest -q examples/edge-microdot/tests
+      - name: Open or update a pull request
+        if: steps.watch.outputs.updates != '0' && steps.tests.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python scripts/ot_protocol_watch.py --apply
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git checkout -B ot-protocols/bump
+          git add -A
+          git commit -m "Bump OT protocol libraries to the latest stable releases"
+          git push --force-with-lease origin ot-protocols/bump
+          if gh pr list --head ot-protocols/bump --json number --jq '.[0].number' | grep -q .; then
+            number=$(gh pr list --head ot-protocols/bump --json number --jq '.[0].number')
+            gh pr edit "$number" --title "Bump OT protocol libraries" --body-file "$RUNNER_TEMP/ot-watch.json"
+          else
+            gh pr create --base main --head ot-protocols/bump --title "Bump OT protocol libraries" --body-file "$RUNNER_TEMP/ot-watch.json"
+          fi
+      - name: Open or update an issue when the latest release fails tests
+        if: steps.watch.outputs.updates != '0' && steps.tests.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh label create ot-protocols --color B60205 --description "OT protocol release watch" || true
+          python scripts/ot_protocol_watch.py --report > "$RUNNER_TEMP/ot-watch.json"
+          number=$(gh issue list --label ot-protocols --state open --json number --jq '.[0].number')
+          title="OT protocol upgrade is blocked"
+          if [ -n "$number" ]; then
+            gh issue comment "$number" --body-file "$RUNNER_TEMP/ot-watch.json"
+          else
+            gh issue create --label ot-protocols --title "$title" --body-file "$RUNNER_TEMP/ot-watch.json"
+      - name: Fail when the latest release did not pass tests
+        if: steps.tests.outcome == 'failure'
+        run: exit 1

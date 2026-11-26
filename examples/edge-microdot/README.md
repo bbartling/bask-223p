@@ -54,8 +54,10 @@ docker compose --profile bacnet up -d
 
 The BACnet service uses **host networking** and binds BACpypes3 to
 `EDGE_BACNET_ADDRESS` (passed as `--address`). A wildcard such as `0.0.0.0`
-will not work. Device instances default to `54545,5007` and are discovered
-with Who-Is plus each device's object-list.
+will not work. Route-aware mode keeps addresses such as
+`2000:7@192.168.204.200`. `--devices` names controllers for Who-Is. It does
+**not** poll every object on those controllers. Present-value polling runs
+only for points listed in `--points`. See [docs/bacnet.md](docs/bacnet.md).
 
 Native (on the Pi):
 
@@ -66,7 +68,17 @@ export EDGE_BACNET_ADDRESS=192.168.1.50/24
 python -m edge_microdot \
   --address 192.168.1.50/24 \
   --devices 54545,5007 \
+  --points configs/points.csv \
   --max-props 25
+```
+
+Read-only catalog of device instances 5007 and 54545 (Who-Is, device info,
+object-name / units / description — not present-value):
+
+```bash
+python -m edge_microdot --driver bacnet \
+  --address "$EDGE_BACNET_ADDRESS" \
+  --scan --devices 5007,54545
 ```
 
 Open `https://<pi-ip>/` for live values, sparklines, and rule flags. Caddy issues a `tls internal` certificate, so browsers warn until its root CA is trusted. Microdot itself listens on loopback only; plain `http://<pi>:8080` is no longer reachable from the LAN.
@@ -90,7 +102,7 @@ The client uses form SCRAM first, then **HTTP Basic** on `/stream/health` and th
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `EDGE_DRIVER` | `fake` | `bacnet`, `niagara`, or `fake` |
+| `EDGE_DRIVER` | `fake` | `bacnet`, `niagara`, `modbus`, or `fake` |
 | `EDGE_SITE` | `demo-site` | Site id on samples |
 | `EDGE_HOST` / `EDGE_PORT` | `127.0.0.1` / `8080` | HTTP bind (Caddy is the public listener) |
 | `EDGE_POLL_INTERVAL` | `15` | Seconds between polls |
@@ -111,7 +123,15 @@ The client uses form SCRAM first, then **HTTP Basic** on `/stream/health` and th
 | `EDGE_DUCKDB_WASM_URL` | `/static/vendor/duckdb/duckdb-browser.mjs` | Vendored DuckDB-WASM 1.32.0 (no CDN) |
 | `EDGE_DUCKDB_WASM_BUNDLE_BASE` | `/static/vendor/duckdb` | Base for `duckdb-eh.wasm` and the worker |
 | `EDGE_BACNET_ADDRESS` | — | BACpypes3 bind address (`host/prefix`, required for the BACnet driver) |
-| `EDGE_BACNET_DEVICES` | `54545,5007` | Device instances to discover via Who-Is when no point file is given |
+| `EDGE_BACNET_DEVICES` | `54545,5007` | Named device instances for Who-Is. Not an object-list poll |
+| `EDGE_BACNET_MAX_INFLIGHT` | `1` | In-flight BACnet requests per device |
+| `EDGE_BACNET_CHUNK_DELAY_S` | `0.05` | Gap between requests to one device. Raise on MS/TP |
+| `EDGE_BACNET_WHOIS_TIMEOUT` | `5` | Seconds to wait for I-Am |
+| `EDGE_BACNET_ROUTE_AWARE` | `1` | Keep `net:mac@router` addresses |
+| `EDGE_BACNET_WRITES_ENABLED` | off | Allow WriteProperty. Also requires an `admin` role |
+| `EDGE_BACNET_ALLOW_PRIORITY_1_2` | off | Permit priority 1 and 2 |
+| `EDGE_BACNET_AUDIT_LOG` | `var/bacnet-audit.log` | JSONL of every write and release |
+| `EDGE_BACNET_BBMD` | — | Optional foreign-device BBMD address |
 | `NIAGARA_URL` / `USER` / `PASS` | — | Required for Niagara driver |
 | `NIAGARA_INSECURE` | `0` | Skip TLS verify (lab only) |
 | `NIAGARA_CA_FILE` | — | CA bundle for a station certificate |
@@ -124,7 +144,7 @@ The client uses form SCRAM first, then **HTTP Basic** on `/stream/health` and th
 
 Microdot built-ins, with Caddy in front for LAN TLS (`Caddyfile`, `tls internal`). The dashboard WebSocket is `wss://` on HTTPS and authenticates with the session cookie or an `Authorization: Bearer` header. Tokens are not accepted on the query string.
 
-`/api/*` implements Open-FDD UI contract 1.0.0 (`contract/open-fdd-ui-api.yaml`). `confirm_min` is the only tuner and stays at each rule's shipped default; writes stay off unless `EDGE_RULES_WRITE=1`. `EDGE_ROLES` is `user:viewer` or `user:operator`. Startup logs which rules apply and which are skipped because a required 223P role is missing. `OPENFDD_VERSION` is `5.0.22`. `scripts/fetch_openfdd.py` vendors the release zips after a sha256 check and does nothing until that tag exists.
+`/api/*` implements Open-FDD UI contract 1.0.0 (`contract/open-fdd-ui-api.yaml`). `confirm_min` is the only tuner and stays at each rule's shipped default; writes stay off unless `EDGE_RULES_WRITE=1`. `EDGE_ROLES` is `user:viewer`, `user:operator`, or `user:admin`. BACnet writes need `admin`. Startup logs which rules apply and which are skipped because a required 223P role is missing. `OPENFDD_VERSION` is `5.0.22`. `scripts/fetch_openfdd.py` vendors the release zips after a sha256 check and does nothing until that tag exists.
 
 | Mechanism | Use |
 | --- | --- |
@@ -164,6 +184,8 @@ Optional native HTTPS on the Pi: set `EDGE_SSL_CERT` and `EDGE_SSL_KEY`, then pa
 - `GET /health` — public status
 - `GET /points`, `/latest`, `/history`, `/rules`, `/api/sql-rules`, `POST /sparql`, `POST /poll/once` — bearer token
 - `GET /api/export/bundle?hours=N` — bearer token; returns a ZIP of `input_sample.parquet`, `point.parquet`, and `rule_result.parquet` (Open-FDD core schemas, SI units)
+- `/api/bacnet/*` — bearer token. Who-Is, one-device object catalog, ReadProperty / ReadPropertyMultiple, and priority-array reads. Writes and releases stay off unless `EDGE_BACNET_WRITES_ENABLED=1` and the token's user is `admin`. Details in [docs/bacnet.md](docs/bacnet.md).
+- `/api/modbus/points` and `POST /api/modbus/read` — bearer token, configured registers only. Optional `pymodbus` extra. Details in [docs/modbus.md](docs/modbus.md).
 - `GET /sql` — session login; browser DuckDB-WASM SQL runner (zero query compute on the Pi)
 - `WS /live` — bearer token (query or `Authorization`)
 

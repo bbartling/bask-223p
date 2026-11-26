@@ -20,6 +20,8 @@ from edge_microdot.history_store import HistoryStore
 from edge_microdot.models import PointSample, PointTarget
 from edge_microdot.security import AuthBundle, api_auth, attach_auth_routes, require_token
 from edge_microdot.sparql_kb import SparqlKb
+from edge_microdot.bacnet_api import attach_bacnet_api
+from edge_microdot.modbus_api import attach_modbus_api
 from edge_microdot.ui_api import attach_ui_api
 
 LOG = logging.getLogger(__name__)
@@ -464,5 +466,7 @@ def create_app(
         finally:
             await hub.remove(ws)
 
+    attach_bacnet_api(app, source=source, auth=auth)
+    attach_modbus_api(app, source=source, auth=auth)
     attach_ui_api(app, history=history, auth=auth, sparql=sparql, site=site)
     return app

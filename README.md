@@ -9,8 +9,10 @@ review draft, section 11.18.1). References use the same `bacnet://<device>/<type
 shape as a BACpypes3 BACnet-to-RDF site-scan document, so a TTL made from Niagara and a TTL made
 from a direct bench scan share identity and can be **reconciled**.
 
-Nothing here writes to a station or a device. The client refuses every non-read operation
+The Niagara client writes nothing to a station. It refuses every non-read operation
 locally, verifies the SCRAM server signature, and never prints or stores credentials.
+The edge BACnet driver can write only when `EDGE_BACNET_WRITES_ENABLED` is set and the
+caller is an `admin`; that flag ships off. Modbus on the edge is read-only.
 
 This is an *external-reference* graph (equipment, properties, BACnet bindings, QUDT units). It is
 not a full 223 topology model: it does not invent ducts, connection points, or sensors.
@@ -39,6 +41,17 @@ flowchart LR
   TTL --> VAL["official 223P SHACL"]
   VAL --> OK[Violations vs Warnings]
 ```
+
+## OT protocol libraries
+
+BACpypes3, pymodbus (the optional Modbus extra), and the other packages named in
+[`ot-protocols.txt`](ot-protocols.txt) stay on the latest stable release. The
+pin is that file plus the same `==` version in the matching `pyproject.toml`.
+Dependabot (`.github/dependabot.yml`) opens weekly updates for pip dependencies
+and the Docker base images. `.github/workflows/ot-protocols.yml` runs every
+Monday and on manual dispatch: it installs the latest releases of the OT
+packages, runs the edge tests, and opens or updates a pull request when they
+pass or an `ot-protocols` issue when they fail.
 
 ## Quick start (PowerShell, Python 3.11+)
 
