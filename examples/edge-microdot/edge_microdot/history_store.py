@@ -160,6 +160,8 @@ class HistoryStore:
         self.conn.execute("SET TimeZone = 'UTC'")
         self.conn.execute("SET memory_limit = '256MB'")
         self.conn.execute("SET threads = 2")
+        self.conn.execute("SET autoinstall_known_extensions = false")
+        self.conn.execute("SET autoload_known_extensions = false")
         self._ensure_schema()
         self._reload_last_snapshot_locked()
 

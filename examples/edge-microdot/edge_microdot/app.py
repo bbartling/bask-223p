@@ -131,6 +131,9 @@ def create_app(
             try:
                 n = history.flush()
                 n += history.sync_from_hot(hot)
+                from edge_microdot.logging_setup import drain_logs
+
+                drain_logs()
                 if n:
                     LOG.debug("synced %s rows into in-memory DuckDB", n)
             except Exception:

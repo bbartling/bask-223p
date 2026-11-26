@@ -94,9 +94,13 @@ The client uses form SCRAM first, then **HTTP Basic** on `/stream/health` and th
 | `EDGE_SITE` | `demo-site` | Site id on samples |
 | `EDGE_HOST` / `EDGE_PORT` | `0.0.0.0` / `8080` | HTTP bind |
 | `EDGE_POLL_INTERVAL` | `15` | Seconds between polls |
-| `EDGE_FLUSH_INTERVAL` | `30` | Sync hot cache to in-memory DuckDB |
-| `EDGE_SNAPSHOT_INTERVAL` | `300` | Compact ZSTD Parquet snapshot period (seconds) |
+| `EDGE_FLUSH_INTERVAL` | `30` | Sync hot cache into in-memory DuckDB (not a card write) |
+| `EDGE_SD_CARD` | off (`1` in Compose) | Use `EDGE_DURABLE_MINUTES` for Parquet snapshots and the log file |
+| `EDGE_DURABLE_MINUTES` | `15` when SD card, else `5` | Minutes between Parquet snapshots and log-file drains |
+| `EDGE_SNAPSHOT_INTERVAL` | durable minutes, in seconds | Overrides the snapshot cadence |
 | `EDGE_MEMORY_RETENTION_HOURS` | `48` | Rolling window kept in `:memory:` DuckDB |
+| `EDGE_LOG_FLUSH_MINUTES` | same as durable minutes | File-log drain interval. Stdout stays immediate |
+| `EDGE_LOG_LEVEL` | `INFO` (`WARNING` in Compose) | Compose defaults to WARNING so Docker's json log stays quiet |
 | `EDGE_FDD_INTERVAL` | `60` | Rule evaluation period |
 | `EDGE_DB_PATH` | `var/edge_history.duckdb` | Snapshot base path (writes `var/snapshots/*.parquet`, no growing `.duckdb` file) |
 | `EDGE_DB_MAX_MB` | `100` | Oldest-first retention cap |
@@ -185,6 +189,8 @@ docker run --rm edge-microdot:test python -m pytest tests -s
 
 ## SD-card friendliness
 
-- History writes are **batched** (`EDGE_FLUSH_INTERVAL`).
-- Logs go to **stdout** and a small **rotating file** under `/tmp` by default.
-- History runs in `:memory:` DuckDB and writes **infrequent atomic ZSTD Parquet snapshots** (`EDGE_SNAPSHOT_INTERVAL`), rotating oldest snapshots to stay under `EDGE_DB_MAX_MB`.
+History stays in `:memory:` DuckDB. The card sees an atomic ZSTD Parquet snapshot, not a write per sample.
+
+Compose turns `EDGE_SD_CARD=1` on for both Pi services. `EDGE_DURABLE_MINUTES` (default **15**) is how often a snapshot is written and how often the log file is drained. The in-memory sync (`EDGE_FLUSH_INTERVAL`, default 30 seconds) does not touch the card. Oldest snapshots rotate under `EDGE_DB_MAX_MB`.
+
+`/tmp` is a 32 MB tmpfs and Docker's json log is capped at 512 KB, with `EDGE_LOG_LEVEL=WARNING`. Shutdown still writes one snapshot and drains the log buffer. Set `EDGE_SNAPSHOT_INTERVAL` in seconds when you want a different cadence than the durable minutes.

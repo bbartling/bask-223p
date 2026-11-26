@@ -14,7 +14,7 @@ from edge_microdot.cache import HotCache
 from edge_microdot.config import load_config, resolve_bacnet_local_address
 from edge_microdot.fdd import FddEngine
 from edge_microdot.history_store import HistoryStore
-from edge_microdot.logging_setup import configure_logging
+from edge_microdot.logging_setup import configure_logging, drain_logs
 from edge_microdot.models import PointTarget
 from edge_microdot.sources import BacnetRpmSource, BaskStreamSource
 from edge_microdot.sources.fake import FakePollSource
@@ -32,6 +32,16 @@ def _load_ssl_context():
     ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     ctx.load_cert_chain(cert, key)
     return ctx
+
+
+def resolve_snapshot_interval(cli_value: float | None, *, sd_card: bool) -> float:
+    """Seconds between Parquet snapshots. SD-card mode uses EDGE_DURABLE_MINUTES."""
+    if cli_value is not None:
+        return float(cli_value)
+    if os.environ.get("EDGE_SNAPSHOT_INTERVAL"):
+        return float(os.environ["EDGE_SNAPSHOT_INTERVAL"])
+    durable_min = float(os.environ.get("EDGE_DURABLE_MINUTES", "15" if sd_card else "5"))
+    return max(60.0, durable_min * 60.0)
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
@@ -161,6 +171,7 @@ def build_runtime(argv: Sequence[str] | None = None) -> tuple:
     db_path = args.db or Path(os.environ.get("EDGE_DB_PATH", "var/edge_history.duckdb"))
     max_mb = args.db_max_mb or int(os.environ.get("EDGE_DB_MAX_MB", "100"))
     retention_hours = args.retention_hours or float(os.environ.get("EDGE_MEMORY_RETENTION_HOURS", "48"))
+    sd_card = _env_bool("EDGE_SD_CARD")
     history = HistoryStore(db_path, max_bytes=max_mb * 1024 * 1024, retention_hours=retention_hours)
     fdd = FddEngine(history=history, targets=targets)
     enable_sparql = _sparql_enabled(cfg)
@@ -170,9 +181,14 @@ def build_runtime(argv: Sequence[str] | None = None) -> tuple:
         sparql = SparqlKb(cfg.graph)
 
     poll_interval = args.poll_interval or float(os.environ.get("EDGE_POLL_INTERVAL", "15"))
-    flush_interval = args.flush_interval or float(os.environ.get("EDGE_FLUSH_INTERVAL", "30"))
+    if args.flush_interval is not None:
+        flush_interval = args.flush_interval
+    elif os.environ.get("EDGE_FLUSH_INTERVAL"):
+        flush_interval = float(os.environ["EDGE_FLUSH_INTERVAL"])
+    else:
+        flush_interval = 30.0
     fdd_interval = args.fdd_interval or float(os.environ.get("EDGE_FDD_INTERVAL", "60"))
-    snapshot_interval = args.snapshot_interval or float(os.environ.get("EDGE_SNAPSHOT_INTERVAL", "300"))
+    snapshot_interval = resolve_snapshot_interval(args.snapshot_interval, sd_card=sd_card)
     host = args.host or os.environ.get("EDGE_HOST", "0.0.0.0")
     port = args.port or int(os.environ.get("EDGE_PORT", "8080"))
 
@@ -230,6 +246,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
     finally:
         history.close()
+        drain_logs(force=True)
         hot.close()
         if hasattr(source, "close") and not source_closed:
             try:
