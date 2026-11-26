@@ -1,12 +1,19 @@
 # TLS on the LAN. Microdot stays on 127.0.0.1 (or a loopback-only published port).
 # WebSocket upgrades are proxied as wss.
 #
-# A bare ":443" site with plain `tls internal` has no certificate for a client that
-# connects by IP (no SNI), so every handshake fails. `on_demand` lets the local CA
-# issue the certificate for whatever name or IP the client used, so no per-Pi
-# address is needed. Set EDGE_TLS_HOST (comma-separated allowed) to pin the site
-# to specific names or IPs instead.
+# on_demand still issues a certificate for the name or IP in the client handshake,
+# but only after Microdot allows that name. Set EDGE_TLS_ALLOW (or EDGE_TLS_HOST)
+# to a comma-separated list. The catch-all ":443" is not an allow entry.
+# EDGE_TLS_BIND limits the listen address when it is set (default: every interface).
+{
+	admin off
+	on_demand_tls {
+		ask http://127.0.0.1:8080/tls/allow
+	}
+}
+
 {$EDGE_TLS_HOST::443} {
+	bind {$EDGE_TLS_BIND:0.0.0.0}
 	tls internal {
 		on_demand
 	}
@@ -15,6 +22,7 @@
 		Strict-Transport-Security "max-age=31536000"
 		X-Content-Type-Options nosniff
 		Referrer-Policy no-referrer
+		Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; connect-src 'self'; frame-ancestors 'none'"
 		-Server
 	}
 	request_body {

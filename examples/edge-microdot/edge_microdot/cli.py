@@ -160,6 +160,7 @@ def build_runtime(argv: Sequence[str] | None = None) -> tuple:
             station=args.station,
             targets=targets,
             insecure=args.insecure or _env_bool("NIAGARA_INSECURE"),
+            ca_file=os.environ.get("NIAGARA_CA_FILE") or None,
             send_auth_header=args.ws_auth_header or _env_bool("NIAGARA_WS_AUTH_HEADER"),
             base_ord=args.base or os.environ.get("BASK_BASE_ORD") or cfg.base_ord,
             site=site,

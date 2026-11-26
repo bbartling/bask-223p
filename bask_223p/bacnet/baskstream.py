@@ -179,6 +179,7 @@ class ReadOnlyBaskStreamClient:
         timeout: int = 30,
         send_auth_header: bool = False,
         require_server_signature: bool = False,
+        ca_file: str | None = None,
     ) -> None:
         try:
             import msgpack  # noqa: F401
@@ -192,7 +193,13 @@ class ReadOnlyBaskStreamClient:
         import requests
 
         self.station = station.rstrip("/")
-        self.verify_tls = not insecure
+        self.ca_file = ca_file or None
+        if insecure:
+            self.verify_tls: bool | str = False
+        elif self.ca_file:
+            self.verify_tls = self.ca_file
+        else:
+            self.verify_tls = True
         self.timeout = timeout
         self.send_auth_header = send_auth_header
         self.require_server_signature = require_server_signature
@@ -369,11 +376,16 @@ class ReadOnlyBaskStreamClient:
         headers = [f"Cookie: {cookie_header}"]
         if self._auth_header:
             headers.append(f"Authorization: {self._auth_header}")
-        sslopt = (
-            {"cert_reqs": ssl.CERT_REQUIRED, "check_hostname": True}
-            if self.verify_tls
-            else {"cert_reqs": ssl.CERT_NONE, "check_hostname": False}
-        )
+        if not self.verify_tls:
+            sslopt: dict[str, Any] = {"cert_reqs": ssl.CERT_NONE, "check_hostname": False}
+        elif isinstance(self.verify_tls, str):
+            sslopt = {
+                "cert_reqs": ssl.CERT_REQUIRED,
+                "check_hostname": True,
+                "ca_certs": self.verify_tls,
+            }
+        else:
+            sslopt = {"cert_reqs": ssl.CERT_REQUIRED, "check_hostname": True}
         self.ws = websocket.create_connection(
             ws_url,
             header=headers,
@@ -853,6 +865,7 @@ def discover_station_snapshot(
     username: str | None = None,
     password: str | None = None,
     insecure: bool = False,
+    ca_file: str | None = None,
     limit: int = 1000,
     ws_auth_header: bool = False,
     timeout: int = 30,
@@ -875,7 +888,11 @@ def discover_station_snapshot(
 
     warnings: list[str] = []
     with ReadOnlyBaskStreamClient(
-        station, insecure=insecure, timeout=timeout, send_auth_header=ws_auth_header
+        station,
+        insecure=insecure,
+        timeout=timeout,
+        send_auth_header=ws_auth_header,
+        ca_file=ca_file,
     ) as client:
         health = client.login(username, password)
         if getattr(client, "auth_mode", None) == "http-basic":

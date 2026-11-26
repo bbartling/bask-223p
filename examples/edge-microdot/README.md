@@ -112,6 +112,10 @@ The client uses form SCRAM first, then **HTTP Basic** on `/stream/health` and th
 | `EDGE_BACNET_DEVICES` | `54545,5007` | Device instances to discover via Who-Is when no point file is given |
 | `NIAGARA_URL` / `USER` / `PASS` | — | Required for Niagara driver |
 | `NIAGARA_INSECURE` | `0` | Skip TLS verify (lab only) |
+| `NIAGARA_CA_FILE` | — | CA bundle for a station certificate |
+| `EDGE_TLS_HOST` | `:443` | Caddy site address |
+| `EDGE_TLS_ALLOW` | `EDGE_TLS_HOST` | Names Caddy may certificate. `:443` allows none |
+| `EDGE_TLS_BIND` | every interface | Address Caddy binds |
 | `NIAGARA_WS_AUTH_HEADER` | `0` | Basic auth on WS handshake |
 
 ### Authentication

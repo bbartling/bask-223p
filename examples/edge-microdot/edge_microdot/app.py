@@ -106,6 +106,24 @@ class LiveHub:
                     self._clients.discard(ws)
 
 
+def tls_name_allowed(name: str) -> bool:
+    """True when Caddy may issue a certificate for this SNI or IP.
+
+    ``EDGE_TLS_ALLOW`` is the list. If it is unset, ``EDGE_TLS_HOST`` is used.
+    The catch-all site address ``:443`` is not an allow entry, so on-demand
+    issuance stays closed until names are configured.
+    """
+    raw = os.environ.get("EDGE_TLS_ALLOW", "").strip() or os.environ.get("EDGE_TLS_HOST", "")
+    allowed: set[str] = set()
+    for part in raw.split(","):
+        item = part.strip().lower().rstrip(".")
+        if not item or item in {":443", "443", "*"} or item.startswith(":"):
+            continue
+        allowed.add(item)
+    candidate = name.strip().lower().rstrip(".")
+    return bool(candidate) and candidate in allowed
+
+
 def create_app(
     *,
     source: Any,
@@ -227,6 +245,13 @@ def create_app(
         if target is None:
             return Response(status_code=404)
         return send_file(str(target))
+
+    @app.get("/tls/allow")
+    async def tls_allow(request):
+        domain = str(request.args.get("domain") or "")
+        if tls_name_allowed(domain):
+            return Response("", status_code=200)
+        return Response("", status_code=403)
 
     @app.get("/health")
     async def health(request):

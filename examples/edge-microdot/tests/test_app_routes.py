@@ -51,6 +51,31 @@ def edge_app(tmp_path, monkeypatch):
     hot.close()
 
 
+def test_tls_allow_is_a_name_list(edge_app, monkeypatch):
+    import asyncio
+
+    from microdot.test_client import TestClient
+
+    from edge_microdot.app import tls_name_allowed
+
+    monkeypatch.setenv("EDGE_TLS_ALLOW", "edge.local")
+    assert tls_name_allowed("edge.local")
+    assert not tls_name_allowed("other.example")
+    monkeypatch.setenv("EDGE_TLS_HOST", ":443")
+    monkeypatch.delenv("EDGE_TLS_ALLOW", raising=False)
+    assert not tls_name_allowed("edge.local")
+
+    async def _run() -> None:
+        monkeypatch.setenv("EDGE_TLS_ALLOW", "edge.local")
+        client = TestClient(edge_app)
+        allowed = await client.get("/tls/allow?domain=edge.local")
+        denied = await client.get("/tls/allow?domain=other.example")
+        assert allowed.status_code == 200
+        assert denied.status_code == 403
+
+    asyncio.run(_run())
+
+
 def test_health_and_latest(edge_app):
     import asyncio
 

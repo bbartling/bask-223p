@@ -45,6 +45,7 @@ class BaskStreamSource:
         username: str | None = None,
         password: str | None = None,
         insecure: bool = False,
+        ca_file: str | None = None,
         send_auth_header: bool = False,
         base_ord: str = "slot:/Drivers/BacnetNetwork",
         site: str = "demo-site",
@@ -60,6 +61,7 @@ class BaskStreamSource:
         self.username = username or os.environ.get("NIAGARA_USER")
         self.password = password or os.environ.get("NIAGARA_PASS")
         self.insecure = insecure
+        self.ca_file = ca_file or os.environ.get("NIAGARA_CA_FILE") or None
         self.send_auth_header = send_auth_header
         self.base_ord = base_ord
         self.site = site
@@ -88,6 +90,7 @@ class BaskStreamSource:
         client = ReadOnlyBaskStreamClient(
             self.station,
             insecure=self.insecure,
+            ca_file=self.ca_file,
             timeout=self.timeout,
             send_auth_header=self.send_auth_header,
         )
@@ -108,6 +111,7 @@ class BaskStreamSource:
             username=user,
             password=pw,
             insecure=self.insecure,
+            ca_file=self.ca_file,
             timeout=self.timeout,
             ws_auth_header=self.send_auth_header,
         )

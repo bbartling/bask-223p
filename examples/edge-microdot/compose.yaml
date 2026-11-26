@@ -6,6 +6,16 @@ services:
       dockerfile: examples/edge-microdot/Dockerfile
     network_mode: host
     restart: unless-stopped
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 512m
+    stop_grace_period: 30s
+    env_file:
+      - path: .env
+        required: false
     tmpfs:
       - /tmp:size=32m,mode=1777
     logging:
@@ -27,9 +37,26 @@ services:
       EDGE_DUCKDB_WASM_URL: "${EDGE_DUCKDB_WASM_URL:-}"
       EDGE_DUCKDB_WASM_BUNDLE_BASE: "${EDGE_DUCKDB_WASM_BUNDLE_BASE:-}"
       EDGE_ENABLE_SPARQL: "${EDGE_ENABLE_SPARQL:-0}"
+      EDGE_SITE: "${EDGE_SITE:-demo-site}"
+      EDGE_HOST: "${EDGE_HOST:-127.0.0.1}"
+      EDGE_PORT: "${EDGE_PORT:-8080}"
+      EDGE_FLUSH_INTERVAL: "${EDGE_FLUSH_INTERVAL:-30}"
+      EDGE_SNAPSHOT_INTERVAL: "${EDGE_SNAPSHOT_INTERVAL:-}"
+      EDGE_FDD_INTERVAL: "${EDGE_FDD_INTERVAL:-60}"
+      EDGE_HOT_BACKEND: "${EDGE_HOT_BACKEND:-dict}"
       EDGE_SECRET_KEY: "${EDGE_SECRET_KEY:-}"
+      EDGE_SECRET_KEY_FILE: "${EDGE_SECRET_KEY_FILE:-}"
       EDGE_USERS: "${EDGE_USERS:-}"
+      EDGE_USERS_FILE: "${EDGE_USERS_FILE:-}"
       EDGE_TOKEN_TTL: "${EDGE_TOKEN_TTL:-3600}"
+      EDGE_SESSION_TTL: "${EDGE_SESSION_TTL:-}"
+      EDGE_ROLES: "${EDGE_ROLES:-}"
+      EDGE_RULES_WRITE: "${EDGE_RULES_WRITE:-0}"
+      EDGE_AUTH_DISABLED: "${EDGE_AUTH_DISABLED:-}"
+      EDGE_ALLOW_UNAUTHENTICATED: "${EDGE_ALLOW_UNAUTHENTICATED:-}"
+      EDGE_SSL_CERT: "${EDGE_SSL_CERT:-}"
+      EDGE_SSL_KEY: "${EDGE_SSL_KEY:-}"
+      EDGE_TLS_ALLOW: "${EDGE_TLS_ALLOW:-}"
       EDGE_BACNET_ADDRESS: "${EDGE_BACNET_ADDRESS:-}"
       EDGE_BACNET_DEVICES: "${EDGE_BACNET_DEVICES:-54545,5007}"
     volumes:
@@ -54,6 +81,16 @@ services:
       context: ../..
       dockerfile: examples/edge-microdot/Dockerfile
     restart: unless-stopped
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 512m
+    stop_grace_period: 30s
+    env_file:
+      - path: .env
+        required: false
     # Caddy runs on the host network and reaches Microdot through this loopback-only
     # published port. Microdot listens on 0.0.0.0 inside the container so the
     # published port can reach it; it is not exposed on the LAN.
@@ -85,9 +122,27 @@ services:
       EDGE_DUCKDB_WASM_URL: "${EDGE_DUCKDB_WASM_URL:-}"
       EDGE_DUCKDB_WASM_BUNDLE_BASE: "${EDGE_DUCKDB_WASM_BUNDLE_BASE:-}"
       EDGE_ENABLE_SPARQL: "${EDGE_ENABLE_SPARQL:-0}"
+      EDGE_SITE: "${EDGE_SITE:-demo-site}"
+      EDGE_HOST: "${EDGE_HOST:-0.0.0.0}"
+      EDGE_PORT: "${EDGE_PORT:-8080}"
+      EDGE_FLUSH_INTERVAL: "${EDGE_FLUSH_INTERVAL:-30}"
+      EDGE_SNAPSHOT_INTERVAL: "${EDGE_SNAPSHOT_INTERVAL:-}"
+      EDGE_FDD_INTERVAL: "${EDGE_FDD_INTERVAL:-60}"
+      EDGE_HOT_BACKEND: "${EDGE_HOT_BACKEND:-dict}"
       EDGE_SECRET_KEY: "${EDGE_SECRET_KEY:-}"
+      EDGE_SECRET_KEY_FILE: "${EDGE_SECRET_KEY_FILE:-}"
       EDGE_USERS: "${EDGE_USERS:-}"
+      EDGE_USERS_FILE: "${EDGE_USERS_FILE:-}"
       EDGE_TOKEN_TTL: "${EDGE_TOKEN_TTL:-3600}"
+      EDGE_SESSION_TTL: "${EDGE_SESSION_TTL:-}"
+      EDGE_ROLES: "${EDGE_ROLES:-}"
+      EDGE_RULES_WRITE: "${EDGE_RULES_WRITE:-0}"
+      EDGE_AUTH_DISABLED: "${EDGE_AUTH_DISABLED:-}"
+      EDGE_ALLOW_UNAUTHENTICATED: "${EDGE_ALLOW_UNAUTHENTICATED:-}"
+      EDGE_SSL_CERT: "${EDGE_SSL_CERT:-}"
+      EDGE_SSL_KEY: "${EDGE_SSL_KEY:-}"
+      EDGE_TLS_ALLOW: "${EDGE_TLS_ALLOW:-}"
+      NIAGARA_CA_FILE: "${NIAGARA_CA_FILE:-}"
       BASK_BASE_ORD: "${BASK_BASE_ORD:-slot:/Drivers}"
     volumes:
       - ./var:/app/examples/edge-microdot/var
@@ -104,11 +159,26 @@ services:
       - "8080"
 
   caddy:
-    image: caddy:2
+    image: caddy:2@sha256:4851e54a46b206517c574821bb5cc67f170d2156041e9fbc4c9193c45e84a75b
     network_mode: host
     restart: unless-stopped
+    read_only: true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 512m
+    stop_grace_period: 30s
+    env_file:
+      - path: .env
+        required: false
+    tmpfs:
+      - /tmp:size=32m,mode=1777
     environment:
       EDGE_TLS_HOST: "${EDGE_TLS_HOST:-:443}"
+      EDGE_TLS_BIND: "${EDGE_TLS_BIND:-0.0.0.0}"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
