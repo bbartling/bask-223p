@@ -151,37 +151,43 @@ def test_export_bundle_parquet_schemas_and_sql_rules(tmp_path):
     store.flush()
     engine = FddEngine(history=store, stale_minutes=5, targets=targets)
     # Also ensure an FDD result row is recorded
-    store.record_fdd_results([(ts_now, "AHU-1", "stale_data", True, "test fault")])
+    store.record_rule_results([{"equipment_id": "AHU-1", "rule_id": "SV-STALE", "subject_key": "bacnet://10001/analog-input,1", "status": "FAULT", "reason": "test fault", "fault_hours": 1.0, "covered_hours": 1.0, "role": "zone_air_temperature", "window_end": ts_now}])
 
     raw_zip = store.export_bundle_zip(targets, hours=24)
     with zipfile.ZipFile(io.BytesIO(raw_zip)) as zf:
-        assert set(zf.namelist()) == {"samples.parquet", "fdd_results.parquet", "points.parquet"}
+        assert set(zf.namelist()) == {"input_sample.parquet", "point.parquet", "rule_result.parquet"}
         for name in zf.namelist():
             (tmp_path / name).write_bytes(zf.read(name))
 
     con = duckdb.connect(":memory:")
     con.execute("SET TimeZone = 'UTC'")
-    s_cols = [d[0] for d in con.execute(f"SELECT * FROM read_parquet('{tmp_path / 'samples.parquet'}') LIMIT 0").description]
-    f_cols = [d[0] for d in con.execute(f"SELECT * FROM read_parquet('{tmp_path / 'fdd_results.parquet'}') LIMIT 0").description]
-    p_cols = [d[0] for d in con.execute(f"SELECT * FROM read_parquet('{tmp_path / 'points.parquet'}') LIMIT 0").description]
+    s_cols = [d[0] for d in con.execute(f"SELECT * FROM read_parquet('{tmp_path / 'input_sample.parquet'}') LIMIT 0").description]
+    p_cols = [d[0] for d in con.execute(f"SELECT * FROM read_parquet('{tmp_path / 'point.parquet'}') LIMIT 0").description]
+    r_cols = [d[0] for d in con.execute(f"SELECT * FROM read_parquet('{tmp_path / 'rule_result.parquet'}') LIMIT 0").description]
 
-    assert s_cols == ["ts", "point_id", "value", "units"]
-    assert f_cols == ["ts", "equipment", "rule", "fault_flag", "detail"]
-    assert p_cols == ["point_id", "equipment", "haystack_tags", "class_223p", "unit"]
+    from edge_microdot.history_store import INPUT_SAMPLE_COLUMNS, POINT_COLUMNS, RULE_RESULT_COLUMNS
+    assert s_cols == list(INPUT_SAMPLE_COLUMNS)
+    assert p_cols == list(POINT_COLUMNS)
+    assert r_cols == list(RULE_RESULT_COLUMNS)
 
-    samples = con.execute(f"SELECT point_id, value, units FROM read_parquet('{tmp_path / 'samples.parquet'}') ORDER BY point_id").fetchall()
+    samples = con.execute(f"SELECT point_key, value FROM read_parquet('{tmp_path / 'input_sample.parquet'}') WHERE ts > TIMESTAMPTZ '2020-01-01' ORDER BY point_key").fetchall()
     assert len(samples) == 2
     assert samples[0][1] == pytest.approx(20.0)
-    assert samples[0][2] == "degC"
     assert samples[1][1] == pytest.approx(0.47194745)
-    assert samples[1][2] == "m3/s"
 
-    pts = con.execute(f"SELECT point_id, equipment, haystack_tags, class_223p, unit FROM read_parquet('{tmp_path / 'points.parquet'}') ORDER BY point_id").fetchall()
-    assert pts[0] == ("bacnet://10001/analog-input,1", "AHU-1", "zone air temp sensor", "s223:TemperatureSensor", "degC")
-    assert pts[1] == ("bacnet://10001/analog-input,2", "AHU-1", "discharge air flow sensor", "s223:FlowSensor", "m3/s")
+    pts = con.execute(f"SELECT point_key, equipment_id, role, unit FROM read_parquet('{tmp_path / 'point.parquet'}') ORDER BY point_key").fetchall()
+    assert pts[0][0] == "bacnet://10001/analog-input,1"
+    assert pts[0][1] == "AHU-1"
+    assert pts[0][2] == "zone_air_temperature"
+    assert pts[0][3] == "degC"
+    assert pts[1][2] == "discharge_air_volumetric_flow"
+    assert pts[1][3] == "m3/s"
 
-    # Verify sql/*.sql rules run unchanged against the Parquet-backed telemetry view
-    con.execute(f"CREATE VIEW telemetry AS SELECT point_id AS ref, ts AS timestamp_utc, value AS value_num, CAST(value AS VARCHAR) AS value_text, units FROM read_parquet('{tmp_path / 'samples.parquet'}')")
+    # Verify sql/fdd/rules/*.sql run unchanged against the Open-FDD views
+    con.execute("CREATE SCHEMA IF NOT EXISTS fdd")
+    con.execute(f"CREATE VIEW fdd.input_sample AS SELECT * FROM read_parquet('{tmp_path / 'input_sample.parquet'}')")
+    con.execute(f"CREATE VIEW fdd.point AS SELECT * FROM read_parquet('{tmp_path / 'point.parquet'}')")
+    con.execute("CREATE VIEW sensor_history AS SELECT p.equipment_id, p.point_key AS series_id, p.role AS sensor_role, s.ts AS timestamp_utc, s.value, p.unit FROM fdd.input_sample s JOIN fdd.point p ON p.site_id = s.site_id AND p.point_key = s.point_key")
     defaults = engine.default_rule_params()
     for rule_path in sorted(engine.sql_dir.glob("*.sql")):
         con.execute(rule_path.read_text(encoding="utf-8"), defaults[rule_path.name]).fetchall()
@@ -236,12 +242,12 @@ def test_bundle_and_sql_routes_auth(tmp_path, monkeypatch):
         assert bundle_resp.status_code == 200
         assert bundle_resp.headers.get("Content-Type") == "application/zip"
         with zipfile.ZipFile(io.BytesIO(bundle_resp.body)) as zf:
-            assert set(zf.namelist()) == {"samples.parquet", "fdd_results.parquet", "points.parquet"}
+            assert set(zf.namelist()) == {"input_sample.parquet", "point.parquet", "rule_result.parquet"}
 
         rules_resp = await client.get("/api/sql-rules", headers=bearer)
         assert rules_resp.status_code == 200
         assert "duckdb-wasm" in rules_resp.json["duckdb_wasm_url"]
-        assert any(r["filename"] == "01_stale.sql" for r in rules_resp.json["rules"])
+        assert any(r["filename"] == "sv_stale.sql" for r in rules_resp.json["rules"])
 
         login = await client.post(
             "/login",

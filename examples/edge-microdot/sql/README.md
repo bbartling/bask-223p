@@ -1,14 +1,27 @@
-# DuckDB sweep SQL
+# DuckDB FDD cookbook (Open-FDD layout)
 
-Plain read-only rule queries against the `telemetry` table (on the edge host) or the `telemetry` compatibility view registered in browser DuckDB-WASM at `/sql`.
+Rule files live in `sql/fdd/rules/`, matching the Open-FDD convention
+`sql/fdd/postgres/rules/<rule>.sql`. Filenames and rule ids follow the
+sensor-sweep catalog: `sv_stale.sql` (`SV-STALE`), `sv_range.sql`
+(`SV-RANGE`), `sv_flatline.sql` (`SV-FLATLINE`), `sv_spike.sql` (`SV-SPIKE`).
 
-You can run these directly in `/sql` with zero server-side compute, or on a PC against an exported `samples.parquet` bundle:
+Rules read the Open-FDD input contract:
 
-```sql
-CREATE VIEW telemetry AS
-SELECT point_id AS ref, ts AS timestamp_utc, value AS value_num,
-       CAST(value AS VARCHAR) AS value_text, units
-FROM read_parquet('samples.parquet');
-```
+- `fdd.input_sample(site_id, point_key, ts, value)` — long SI samples, UTC
+- `fdd.point` — bound points; `role` holds the 223P-derived snake_case input term
+  (see [open-fdd#1804](https://github.com/bbartling/open-fdd/issues/1804); no
+  acronyms such as `sat` or `mat`)
+- `sensor_history` — convenience view joining those two
+  (`equipment_id`, `series_id`, `sensor_role`, `timestamp_utc`, `value`, `unit`)
 
-Open each `.sql` file and bind the parameters documented in the header comments.
+Each rule returns the Open-FDD sweep output columns:
+`equipment_id`, `series_id`, `sensor_role`, `fault_hours`, `covered_hours`.
+
+The host runner upserts those rows into `fdd.rule_result`. The same files run
+unchanged in the `/sql` DuckDB-WASM page after the Parquet bundle is registered
+as `fdd.input_sample`, `fdd.point`, and `fdd.rule_result`.
+
+These are simplified in-process DuckDB implementations of the sensor-sweep
+rules. They share names, input/output columns, and SI units with the Open-FDD
+NF pack, but they do not vendor the PostgreSQL pack helpers, run-proof gates,
+or `{{PLACEHOLDER}}` rendering.

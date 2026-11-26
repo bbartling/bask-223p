@@ -75,7 +75,7 @@
       </div>
       <textarea id="sqlEditor" spellcheck="false"></textarea>
       <div class="meta-row">
-        <span id="bundleInfo">Tables: samples(ts, point_id, value, units), fdd_results(ts, equipment, rule, fault_flag, detail), points(point_id, equipment, haystack_tags, class_223p, unit), view telemetry</span>
+        <span id="bundleInfo">Tables: fdd.input_sample(site_id, point_key, ts, value), fdd.point (role = 223P snake_case input term), fdd.rule_result, sensor_history</span>
         <span id="execInfo"></span>
       </div>
       <div class="err" id="errorBox"></div>
@@ -87,6 +87,7 @@
       </table>
     </section>
   </main>
+  
   <script type="module">
     const statusEl = document.getElementById('status');
     const ruleSelect = document.getElementById('ruleSelect');
@@ -103,20 +104,20 @@
     const QUICK_QUERIES = [
       {
         filename: '__samples__',
-        name: 'Latest samples (SI units)',
-        sql: 'SELECT ts, point_id, value, units FROM samples ORDER BY ts DESC LIMIT 50;',
+        name: 'Latest SI samples (fdd.input_sample)',
+        sql: 'SELECT ts, point_key, value FROM fdd.input_sample ORDER BY ts DESC LIMIT 50;',
         default_params: [],
       },
       {
         filename: '__points__',
-        name: 'Point catalog',
-        sql: 'SELECT point_id, equipment, haystack_tags, class_223p, unit FROM points ORDER BY point_id;',
+        name: 'Bound points (223P input terms)',
+        sql: 'SELECT point_key AS point_id, equipment_id AS equipment, role AS input_term, unit FROM fdd.point ORDER BY point_key;',
         default_params: [],
       },
       {
         filename: '__fdd__',
         name: 'Recorded FDD results',
-        sql: 'SELECT ts, equipment, rule, fault_flag, detail FROM fdd_results ORDER BY ts DESC LIMIT 50;',
+        sql: 'SELECT window_end, equipment_id, rule_id, subject_key, status, fault_hours, covered_hours, role FROM fdd.rule_result ORDER BY window_end DESC LIMIT 50;',
         default_params: [],
       },
     ];
@@ -167,7 +168,7 @@
           const buf = await new Response(ds.readable).arrayBuffer();
           out[name] = new Uint8Array(buf);
         } else {
-          throw new Error(Unsupported ZIP compression method  for );
+          throw new Error('Unsupported ZIP compression method ' + method + ' for ' + name);
         }
       }
       return out;
@@ -180,7 +181,7 @@
         throw new Error('Authentication required');
       }
       const data = await resp.json();
-      authHeaders = { Authorization: Bearer  };
+      authHeaders = { Authorization: 'Bearer ' + data.access_token };
     }
 
     async function initDuckDb(wasmUrl, bundleBase) {
@@ -190,14 +191,14 @@
       if (bundleBase) {
         const base = bundleBase.replace(/\/$/, '');
         bundle = {
-          mainModule: ${base}/duckdb-eh.wasm,
-          mainWorker: ${base}/duckdb-browser-eh.worker.js,
+          mainModule: base + '/duckdb-eh.wasm',
+          mainWorker: base + '/duckdb-browser-eh.worker.js',
         };
       } else {
         const bundles = duckdb.getJsDelivrBundles();
         bundle = await duckdb.selectBundle(bundles);
       }
-      const workerBlob = new Blob([importScripts("");], { type: 'text/javascript' });
+      const workerBlob = new Blob(['importScripts("' + bundle.mainWorker + '");'], { type: 'text/javascript' });
       const worker = new Worker(URL.createObjectURL(workerBlob));
       const logger = new duckdb.ConsoleLogger(duckdb.LogLevel.WARNING);
       db = new duckdb.AsyncDuckDB(logger, worker);
@@ -210,24 +211,25 @@
       statusEl.textContent = 'fetching Parquet bundle…';
       errorBox.textContent = '';
       const hours = hoursSelect.value || '24';
-      const resp = await fetch(/api/export/bundle?hours=, { headers: authHeaders });
-      if (!resp.ok) throw new Error(Bundle export failed: HTTP );
+      const resp = await fetch('/api/export/bundle?hours=' + hours, { headers: authHeaders });
+      if (!resp.ok) throw new Error('Bundle export failed: HTTP ' + resp.status);
       const zipBuf = await resp.arrayBuffer();
       const files = await unzipEntries(zipBuf);
-      for (const fname of ['samples.parquet', 'fdd_results.parquet', 'points.parquet']) {
-        if (!files[fname]) throw new Error(Missing  in bundle);
+      const needed = ['input_sample.parquet', 'point.parquet', 'rule_result.parquet'];
+      for (const fname of needed) {
+        if (!files[fname]) throw new Error('Missing ' + fname + ' in bundle');
         await db.registerFileBuffer(fname, files[fname]);
       }
-      await conn.query("CREATE OR REPLACE VIEW samples AS SELECT * FROM read_parquet('samples.parquet');");
-      await conn.query("CREATE OR REPLACE VIEW fdd_results AS SELECT * FROM read_parquet('fdd_results.parquet');");
-      await conn.query("CREATE OR REPLACE VIEW points AS SELECT * FROM read_parquet('points.parquet');");
+      await conn.query("CREATE SCHEMA IF NOT EXISTS fdd");
+      await conn.query("CREATE OR REPLACE VIEW fdd.input_sample AS SELECT * FROM read_parquet('input_sample.parquet')");
+      await conn.query("CREATE OR REPLACE VIEW fdd.point AS SELECT * FROM read_parquet('point.parquet')");
+      await conn.query("CREATE OR REPLACE VIEW fdd.rule_result AS SELECT * FROM read_parquet('rule_result.parquet')");
       await conn.query(
-        "CREATE OR REPLACE VIEW telemetry AS SELECT point_id AS ref, ts AS timestamp_utc, value AS value_num, CAST(value AS VARCHAR) AS value_text, units FROM samples;"
+        "CREATE OR REPLACE VIEW sensor_history AS SELECT p.equipment_id, p.point_key AS series_id, p.role AS sensor_role, s.ts AS timestamp_utc, s.value, p.unit FROM fdd.input_sample s JOIN fdd.point p ON p.site_id = s.site_id AND p.point_key = s.point_key"
       );
-      const cntRes = await conn.query('SELECT COUNT(*) AS n FROM samples');
+      const cntRes = await conn.query('SELECT COUNT(*) AS n FROM fdd.input_sample');
       const nSamples = Number(cntRes.toArray()[0]?.n ?? 0);
-      statusEl.textContent = 
-eady (browser WASM) ·  samples (h);
+      statusEl.textContent = 'ready (browser WASM) · ' + nSamples + ' samples (' + hours + 'h)';
       runBtn.disabled = false;
     }
 
@@ -278,7 +280,7 @@ eady (browser WASM) ·  samples (h);
         }
         const n = renderTable(res);
         const dt = (performance.now() - t0).toFixed(1);
-        execInfo.textContent = ${n} row(s) in  ms (local DuckDB-WASM);
+        execInfo.textContent = n + ' row(s) in ' + dt + ' ms (local DuckDB-WASM)';
       } catch (err) {
         errorBox.textContent = String(err && err.message ? err.message : err);
       }
@@ -316,7 +318,7 @@ eady (browser WASM) ·  samples (h);
         allQueries.forEach((item, idx) => {
           const opt = document.createElement('option');
           opt.value = String(idx);
-          opt.textContent = item.filename.startsWith('__') ? item.name : sql/;
+          opt.textContent = item.filename.startsWith('__') ? item.name : ('sql/fdd/rules/' + item.filename);
           ruleSelect.appendChild(opt);
         });
         selectQuery(0);

@@ -150,7 +150,7 @@ Optional native HTTPS on the Pi: set `EDGE_SSL_CERT` and `EDGE_SSL_KEY`, then pa
 
 - `GET /health` — public status
 - `GET /points`, `/latest`, `/history`, `/rules`, `/api/sql-rules`, `POST /sparql`, `POST /poll/once` — bearer token
-- `GET /api/export/bundle?hours=N` — bearer token; returns a ZIP of `samples.parquet`, `fdd_results.parquet`, and `points.parquet` in SI units
+- `GET /api/export/bundle?hours=N` — bearer token; returns a ZIP of `input_sample.parquet`, `point.parquet`, and `rule_result.parquet` (Open-FDD core schemas, SI units)
 - `GET /sql` — session login; browser DuckDB-WASM SQL runner (zero query compute on the Pi)
 - `WS /live` — bearer token (query or `Authorization`)
 
@@ -158,17 +158,19 @@ Optional native HTTPS on the Pi: set `EDGE_SSL_CERT` and `EDGE_SSL_KEY`, then pa
 
 The edge service keeps DuckDB **in memory** (`duckdb.connect(':memory:')`) fed from the hot cache and periodic writes a compact, ZSTD-compressed Parquet snapshot under `var/snapshots/` (`EDGE_SNAPSHOT_INTERVAL=300`, rotated under `EDGE_DB_MAX_MB=100`). On startup it reloads the newest valid snapshot back into memory.
 
-`GET /api/export/bundle?hours=N` (bearer token required) exports a ZIP containing three portable Parquet files with generic schemas:
+`GET /api/export/bundle?hours=N` (bearer token required) exports a ZIP of three Parquet files whose schemas match the Open-FDD core contract (SI values, UTC timestamps). `fdd.point.role` is the 223P-derived snake_case input term (no `sat`/`mat` acronyms).
 
 | File | Columns | Notes |
 | --- | --- | --- |
-| `samples.parquet` | `ts TIMESTAMPTZ`, `point_id VARCHAR`, `value DOUBLE`, `units VARCHAR` | Normalized to SI units (`degC`, `Pa`, `m3/s`, `W`, `J`, `Hz`, `%`, `%RH`, `ppm`) |
-| `fdd_results.parquet` | `ts TIMESTAMPTZ`, `equipment VARCHAR`, `rule VARCHAR`, `fault_flag BOOLEAN`, `detail VARCHAR` | Recorded FDD sweep results within the window |
-| `points.parquet` | `point_id VARCHAR`, `equipment VARCHAR`, `haystack_tags VARCHAR`, `class_223p VARCHAR`, `unit VARCHAR` | Active point metadata with SI unit |
+| `input_sample.parquet` | `site_id`, `point_key`, `ts`, `value` | `fdd.input_sample`; `value` is SI |
+| `point.parquet` | `site_id`, `point_key`, `equipment_id`, `role`, `role_source`, `kind`, `unit`, `source_unit`, `si_scale`, `si_offset`, `haystack_id`, `attrs`, `updated_at` | `fdd.point`; `role` = 223P snake_case input term |
+| `rule_result.parquet` | Open-FDD `fdd.rule_result` columns (`status`, `fault_hours`, `covered_hours`, `subject_key`, windows, …) | Latest assessment per series/rule |
 
-Open `/sql` (behind session login) to run ad-hoc SQL or any cookbook rule from `sql/*.sql` directly in your browser via **DuckDB-WASM** (loaded from jsDelivr by default; override `EDGE_DUCKDB_WASM_URL` and `EDGE_DUCKDB_WASM_BUNDLE_BASE` to self-host). The browser fetches `/api/export/bundle?hours=N` with your token, registers the three Parquet files plus a `telemetry` compatibility view, and executes queries locally with zero compute on the Pi.
+Open `/sql` (behind session login) to run ad-hoc SQL or any cookbook rule from `sql/fdd/rules/*.sql` directly in your browser via **DuckDB-WASM** (loaded from jsDelivr by default; override `EDGE_DUCKDB_WASM_URL` and `EDGE_DUCKDB_WASM_BUNDLE_BASE` to self-host). The browser fetches `/api/export/bundle?hours=N` with your token, registers the three Parquet files as `fdd.input_sample`, `fdd.point`, and `fdd.rule_result` plus a `sensor_history` view, and executes queries locally with zero compute on the host.
 
-**Notebook (optional):** `notebooks/edge_duckdb_sweep.ipynb` is now optional — `/sql` runs the same `sql/*.sql` rules directly in the browser. If you still prefer a local notebook, download `/api/export/bundle` or inspect a Parquet snapshot from `var/snapshots/` with `duckdb -ui` on a PC.
+DuckDB stays in-process with the edge app. An optional later fdd-worker container sharing the Parquet snapshot volume is described in `docs/duckdb-wasm-bundle.md`. Schema parity with the Open-FDD NF app is tabulated in `docs/parity-with-open-fdd-nf.md`.
+
+**Notebook (optional):** `notebooks/edge_duckdb_sweep.ipynb` is optional — `/sql` runs the same `sql/fdd/rules/*.sql` files in the browser. If you still prefer a local notebook, download `/api/export/bundle` or inspect a Parquet snapshot from `var/snapshots/` with `duckdb -ui` on a PC.
 
 ## Memory notes (SPARQL)
 
