@@ -12,7 +12,8 @@ from a direct bench scan share identity and can be **reconciled**.
 The Niagara client writes nothing to a station. It refuses every non-read operation
 locally, verifies the SCRAM server signature, and never prints or stores credentials.
 The edge BACnet driver can write only when `EDGE_BACNET_WRITES_ENABLED` is set and the
-caller is an `admin`; that flag ships off. Modbus on the edge is read-only.
+caller is an `admin`; that flag ships off. It never maps or polls every point on a live
+system: legacy MS/TP and IoT networks bottleneck easily. Modbus on the edge is read-only.
 
 This is an *external-reference* graph (equipment, properties, BACnet bindings, QUDT units). It is
 not a full 223 topology model: it does not invent ducts, connection points, or sensors.

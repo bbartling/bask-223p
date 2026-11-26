@@ -146,6 +146,46 @@ class _Err:
     errorCode = "unknown-property"
 
 
+def test_priority_slots_unwrap_choice_types():
+    from bacpypes3.basetypes import OptionalReal, OptionalUnsigned, PriorityValue
+
+    from edge_microdot.sources.bacnet_rpm import unwrap_bacnet_value
+
+    number, status = unwrap_bacnet_value(OptionalReal(real=21.5))
+    assert status == "ok" and number == 21.5
+    empty, status = unwrap_bacnet_value(OptionalReal(null=()))
+    assert status == "ok" and empty is None
+    unsigned, status = unwrap_bacnet_value(OptionalUnsigned(unsigned=7))
+    assert status == "ok" and unsigned == 7
+    flag, status = unwrap_bacnet_value(PriorityValue(boolean=1))
+    assert status == "ok" and flag is True
+    text, status = unwrap_bacnet_value(PriorityValue(characterString="hi"))
+    assert status == "ok" and text == "hi"
+
+    class _Whole(_FakeTransport):
+        async def read_property(self, address, object_identifier, property_identifier, *, array_index=None):
+            if property_identifier == "priority-array":
+                slots = [OptionalReal(null=()) for _ in range(16)]
+                slots[0] = PriorityValue(boolean=0)
+                slots[8] = OptionalReal(real=19.0)
+                return slots
+            if property_identifier == "relinquish-default":
+                return OptionalReal(real=10.0).real
+            raise AssertionError(property_identifier)
+
+    src = BacnetRpmSource(
+        [PointTarget(site="s", device="10001", object_id="analog-output,1", device_address="192.168.1.50")],
+        transport=_Whole(),
+        chunk_delay_s=0,
+        retries=0,
+    )
+    body = asyncio.run(src.read_priority_array(10001, "analog-output,1"))
+    assert body["priority_array"][0] is False
+    assert body["priority_array"][8] == 19.0
+    assert body["priority_array"].count(None) == 14
+    assert "object at 0x" not in repr(body["priority_array"])
+
+
 def test_priority_array_index_fallback_and_relinquish_default():
     class _Pri(_FakeTransport):
         async def read_property(self, address, object_identifier, property_identifier, *, array_index=None):

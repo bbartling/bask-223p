@@ -287,6 +287,22 @@ def unwrap_bacnet_value(val: Any) -> tuple[Any, str]:
     if isinstance(val, float) and (math.isnan(val) or math.isinf(val)):
         return None, "error:non_finite"
 
+    # PriorityValue / OptionalReal and the other optional-* choices. str() of
+    # these is the default object repr, which is not a slot value.
+    choice = getattr(val, "_choice", None)
+    if isinstance(choice, str) and choice:
+        if choice == "null":
+            return None, "ok"
+        return unwrap_bacnet_value(getattr(val, choice, None))
+
+    # Null is a tuple. Treat it as an empty slot before the list walk.
+    if type(val).__name__ == "Null":
+        return None, "ok"
+
+    # Boolean subclasses int, so it has to be checked before the number branch.
+    if type(val).__name__ == "Boolean":
+        return bool(val), "ok"
+
     if isinstance(val, (bool, int, float, str)):
         return val, "ok"
 
