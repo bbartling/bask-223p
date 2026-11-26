@@ -1,0 +1,7 @@
+# OT protocol libraries. Exact pins, one package per line.
+# scripts/ot_protocol_watch.py and .github/workflows/ot-protocols.yml
+# compare these with PyPI every week. Bump the version here and in the
+# pyproject that already pins the same package.
+bacpypes3==0.1.0
+pymodbus==3.16.2
+websocket-client==1.9.2

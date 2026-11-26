@@ -1,0 +1,38 @@
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+  - package-ecosystem: pip
+    directory: "/examples/edge-microdot"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+  - package-ecosystem: pip
+    directory: "/examples/live-ingest"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+  - package-ecosystem: pip
+    directory: "/examples/sparql-playground"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+  - package-ecosystem: docker
+    directory: "/examples/edge-microdot"
+    schedule:
+      interval: weekly
+  - package-ecosystem: docker
+    directory: "/examples/live-ingest"
+    schedule:
+      interval: weekly
+  - package-ecosystem: docker
+    directory: "/examples/sparql-playground"
+    schedule:
+      interval: weekly
+  - package-ecosystem: docker-compose
+    directory: "/examples/edge-microdot"
+    schedule:
+      interval: weekly

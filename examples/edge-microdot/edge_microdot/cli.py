@@ -18,6 +18,7 @@ from edge_microdot.history_store import HistoryStore
 from edge_microdot.logging_setup import configure_logging, drain_logs
 from edge_microdot.models import PointTarget
 from edge_microdot.sources import BacnetRpmSource, BaskStreamSource
+from edge_microdot.sources.modbus_tcp import ModbusTcpSource, load_modbus_points
 from edge_microdot.sources.fake import FakePollSource
 from edge_microdot.security import load_auth_from_env
 from edge_microdot.sparql_kb import SparqlKb
@@ -65,7 +66,7 @@ def _env_bool(name: str, default: bool = False) -> bool:
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="edge-microdot", description="Edge BACnet / Niagara ingest (Microdot)")
-    p.add_argument("--driver", choices=["bacnet", "niagara", "fake"], default=None)
+    p.add_argument("--driver", choices=["bacnet", "niagara", "fake", "modbus"], default=None)
     p.add_argument("--points", type=Path, help="223P TTL, scan TTL, CSV, or YAML config")
     p.add_argument("--site", default=None)
     p.add_argument("--station", default=None, help="Niagara URL (or NIAGARA_URL)")
@@ -89,6 +90,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--ws-auth-header", action="store_true")
     p.add_argument("--fake-points", type=int, default=50, help="Fake driver point count for demos/tests")
     p.add_argument("--once", action="store_true", help="Poll once and exit (no server)")
+    p.add_argument(
+        "--scan",
+        action="store_true",
+        help="Read-only Who-Is, device info, and object catalog for --devices, then exit",
+    )
+    p.add_argument("--whois-timeout", type=float, default=None, help="Who-Is / I-Am wait in seconds")
     return p
 
 
@@ -157,15 +164,34 @@ def build_runtime(argv: Sequence[str] | None = None) -> tuple:
                 "bacnet driver requires --points or EDGE_BACNET_DEVICES / --devices "
                 "(comma-separated device instances to discover via Who-Is)"
             )
-        # Discover on the poll loop, not a throwaway asyncio.run() here.
-        # BACpypes3 Application is loop-bound; a second loop would hang Who-Is/RPM.
+        # BACpypes3 Application is loop-bound to the Microdot serve() loop.
+        # discover_instances names devices for Who-Is. It does not copy every
+        # object into the poll set.
         source = BacnetRpmSource(
             targets,
             local_address=address,
             max_props=args.max_props or cfg.max_props,
-            discover_instances=instances if not targets else (),
+            discover_instances=instances,
             site=site,
+            whois_timeout_s=args.whois_timeout,
         )
+    elif driver == "modbus":
+        if not args.points:
+            raise SystemExit("modbus driver requires --points (a YAML file with a modbus: list)")
+        modbus_points = load_modbus_points(args.points, site=site)
+        if not modbus_points:
+            raise SystemExit(f"no modbus points in {args.points}")
+        source = ModbusTcpSource(modbus_points)
+        targets = [
+            PointTarget(
+                site=point.site,
+                device=point.key(),
+                object_id=point.name,
+                property_id=point.data_type,
+                label=point.name,
+            )
+            for point in modbus_points
+        ]
     elif driver == "niagara":
         source = BaskStreamSource(
             station=args.station,
@@ -242,7 +268,36 @@ def build_runtime(argv: Sequence[str] | None = None) -> tuple:
     return app, source, hot, history, host, port, args
 
 
+async def _run_scan(args: argparse.Namespace) -> int:
+    import json
+
+    address = resolve_bacnet_local_address(cli=args.local_address)
+    instances = _device_instances(args)
+    if not instances:
+        raise SystemExit("scan requires --devices (for example 5007,54545)")
+    site = args.site or os.environ.get("EDGE_SITE", "demo-site")
+    source = BacnetRpmSource(
+        [],
+        local_address=address,
+        discover_instances=instances,
+        site=site,
+        whois_timeout_s=args.whois_timeout,
+        max_props=args.max_props or 25,
+    )
+    try:
+        report = await source.scan_devices(instances, timeout=args.whois_timeout)
+    finally:
+        await source.close()
+    json.dump(report, sys.stdout, indent=2)
+    sys.stdout.write("\n")
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
+    pre = build_parser().parse_args(argv)
+    if pre.scan:
+        configure_logging()
+        return asyncio.run(_run_scan(pre))
     app, source, hot, history, host, port, args = build_runtime(argv)
     source_closed = False
     try:
