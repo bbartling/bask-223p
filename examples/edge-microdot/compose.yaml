@@ -159,7 +159,7 @@ services:
       - "8080"
 
   caddy:
-    image: caddy:2@sha256:4851e54a46b206517c574821bb5cc67f170d2156041e9fbc4c9193c45e84a75b
+    image: caddy:2@sha256:4851e54a46b206517c574821bb5cc67f170d2156041e9fbc4c9193b45e84a75b
     network_mode: host
     restart: unless-stopped
     read_only: true
