@@ -127,6 +127,7 @@ The client uses form SCRAM first, then **HTTP Basic** on `/stream/health` and th
 | `EDGE_BACNET_MAX_INFLIGHT` | `1` | In-flight BACnet requests per device |
 | `EDGE_BACNET_CHUNK_DELAY_S` | `0.05` | Gap between requests to one device. Raise on MS/TP |
 | `EDGE_BACNET_WHOIS_TIMEOUT` | `5` | Seconds to wait for I-Am |
+| `EDGE_BACNET_READ_MAX` | `50` | Maximum entries in one `POST /api/bacnet/read` |
 | `EDGE_BACNET_ROUTE_AWARE` | `1` | Keep `net:mac@router` addresses |
 | `EDGE_BACNET_WRITES_ENABLED` | off | Allow WriteProperty. Also requires an `admin` role |
 | `EDGE_BACNET_ALLOW_PRIORITY_1_2` | off | Permit priority 1 and 2 |
@@ -184,7 +185,7 @@ Optional native HTTPS on the Pi: set `EDGE_SSL_CERT` and `EDGE_SSL_KEY`, then pa
 - `GET /health` — public status
 - `GET /points`, `/latest`, `/history`, `/rules`, `/api/sql-rules`, `POST /sparql`, `POST /poll/once` — bearer token
 - `GET /api/export/bundle?hours=N` — bearer token; returns a ZIP of `input_sample.parquet`, `point.parquet`, and `rule_result.parquet` (Open-FDD core schemas, SI units)
-- `/api/bacnet/*` — bearer token. Who-Is, one-device object catalog, ReadProperty / ReadPropertyMultiple, and priority-array reads. Writes and releases stay off unless `EDGE_BACNET_WRITES_ENABLED=1` and the token's user is `admin`. Details in [docs/bacnet.md](docs/bacnet.md).
+- `/api/bacnet/*` — bearer token. Who-Is, one-device object catalog, ReadProperty / ReadPropertyMultiple, and priority-array reads. Never map or poll every point on a live system: legacy MS/TP and IoT networks bottleneck easily. `POST /api/bacnet/read` rejects a `reads` list longer than `EDGE_BACNET_READ_MAX` (default 50), and the read routes share the per-device pace (`EDGE_BACNET_MAX_INFLIGHT`, `EDGE_BACNET_CHUNK_DELAY_S`). Writes and releases stay off unless `EDGE_BACNET_WRITES_ENABLED=1` and the token's user is `admin`. Details in [docs/bacnet.md](docs/bacnet.md).
 - `/api/modbus/points` and `POST /api/modbus/read` — bearer token, configured registers only. Optional `pymodbus` extra. Details in [docs/modbus.md](docs/modbus.md).
 - `GET /sql` — session login; browser DuckDB-WASM SQL runner (zero query compute on the Pi)
 - `WS /live` — bearer token (query or `Authorization`)

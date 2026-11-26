@@ -36,7 +36,6 @@ class _ApiTransport:
                 max_apdu_length_accepted=480,
                 segmentation_supported="noSegmentation",
                 vendor_id=5,
-                object_name="AHU",
             )
         ]
 
@@ -127,6 +126,7 @@ def test_bacnet_routes_require_a_token_and_do_not_poll_present_value(tmp_path, m
         who = await client.get("/api/bacnet/whois?low=5007&high=5007", headers=_bearer(token))
         assert who.status_code == 200
         assert who.json["devices"][0]["address"] == "2000:7@192.168.204.200"
+        assert who.json["devices"][0]["object_name"] == ""
         catalog = await client.get("/api/bacnet/devices/5007/objects", headers=_bearer(token))
         assert catalog.status_code == 200
         assert catalog.json["objects"][0]["object_name"] == "Zone temp"
@@ -152,6 +152,22 @@ def test_bacnet_routes_require_a_token_and_do_not_poll_present_value(tmp_path, m
         )
         assert blocked.status_code == 403
         assert transport.writes == []
+        listed = await client.get("/api/bacnet/devices", headers=_bearer(token))
+        assert listed.status_code == 200
+        assert listed.json["devices"][0]["object_name"] == "AHU"
+        too_many = await client.post(
+            "/api/bacnet/read",
+            headers=_bearer(token),
+            body={"device": 5007, "reads": [{"object": "analog-input,1", "property": "present-value"}] * 51},
+        )
+        assert too_many.status_code == 400
+        monkeypatch.setenv("EDGE_BACNET_READ_MAX", "2")
+        capped = await client.post(
+            "/api/bacnet/read",
+            headers=_bearer(token),
+            body={"device": 5007, "reads": [{"object": "analog-input,1", "property": "present-value"}] * 3},
+        )
+        assert capped.status_code == 400
 
     try:
         asyncio.run(_run())

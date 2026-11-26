@@ -11,6 +11,8 @@ BACpypes3 application on another loop.
 
 ## What is polled
 
+Do not map or poll every point on a live system. Legacy MS/TP and small IoT
+networks bottleneck easily, and a full object-list poll will stall them.
 Polling reads **configured points only** (`--points`). Naming a device with
 `--devices` or `EDGE_BACNET_DEVICES` does not copy its object-list into the
 poll set. A controller with thousands of objects is not walked on a timer.
@@ -50,11 +52,22 @@ Token auth matches the other `/api` routes (`Authorization: Bearer`).
 | Method | Path | Body / query |
 | --- | --- | --- |
 | GET | `/api/bacnet/whois?low=&high=&timeout=&address=` | Range-limited Who-Is. `address` may be `2000:*@192.168.204.200` |
-| GET | `/api/bacnet/devices` | Who-Is for each named `--devices` instance only |
+| GET | `/api/bacnet/devices` | Who-Is for each named `--devices` instance, plus one `object-name` read |
 | GET | `/api/bacnet/devices/<instance>` | Device-object properties, not the object-list |
 | GET | `/api/bacnet/devices/<instance>/objects` | One device's catalog |
 | POST | `/api/bacnet/read` | `{"device":5007,"reads":[{"object":"analog-input,1","property":"present-value"}]}` |
-| GET | `/api/bacnet/priority?device=&object=` | 16 priority slots and `relinquish-default` |
+| GET | `/api/bacnet/priority?device=&object=` | 16 priority slots and `relinquish-default`. Each slot is a number, a bool, or null |
+
+`GET /api/bacnet/whois` leaves `object_name` blank. An I-Am does not carry it,
+and filling it for every device in a range would be another fan-out.
+`GET /api/bacnet/devices` only talks to the named instances, so it follows
+each I-Am with one `object-name` read.
+
+`POST /api/bacnet/read` accepts at most `EDGE_BACNET_READ_MAX` entries in
+`reads` (default 50) and returns 400 above that. Who-Is, the one-device
+catalog, priority-array, and this read route are also paced by
+`EDGE_BACNET_MAX_INFLIGHT` and `EDGE_BACNET_CHUNK_DELAY_S`. Do not raise the
+cap to walk a whole controller.
 
 Discovery does not assign 223P point roles. Configured points keep the role
 names already in `edge_microdot.role_contract` (the open-fdd vocabulary, for

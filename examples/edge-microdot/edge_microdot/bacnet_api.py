@@ -18,6 +18,15 @@ from edge_microdot.sources.bacnet_rpm import (
 )
 
 
+def _read_cap() -> int:
+    raw = os.environ.get("EDGE_BACNET_READ_MAX", "50").strip()
+    try:
+        cap = int(raw)
+    except ValueError:
+        cap = 50
+    return cap if cap > 0 else 50
+
+
 def _error(code: str, message: str, status: int) -> Response:
     return Response({"error": {"code": code, "message": message}}, status_code=status)
 
@@ -98,8 +107,25 @@ def attach_bacnet_api(app, *, source, auth) -> None:
             except BacnetTransportError as exc:
                 found.append({"device_instance": int(inst), "error": str(exc)})
                 continue
-            match = [dev.to_dict() for dev in rows if dev.device_instance == int(inst)]
-            found.append(match[0] if match else {"device_instance": int(inst), "error": "no I-Am"})
+            match = next((dev for dev in rows if dev.device_instance == int(inst)), None)
+            if match is None:
+                found.append({"device_instance": int(inst), "error": "no I-Am"})
+                continue
+            info = match.to_dict()
+            # I-Am has no object-name. One ReadProperty is cheap for a named device.
+            if not info.get("object_name"):
+                try:
+                    rows_name = await src.read_properties(
+                        int(inst),
+                        [(f"device,{int(inst)}", "object-name")],
+                        address=match.address,
+                    )
+                except BacnetTransportError:
+                    rows_name = []
+                if rows_name and rows_name[0].get("status") == "ok" and rows_name[0].get("value"):
+                    info["object_name"] = str(rows_name[0]["value"])
+                    match.object_name = info["object_name"]
+            found.append(info)
         return {"devices": found}
 
     @app.get("/api/bacnet/devices/<instance>")
@@ -163,6 +189,9 @@ def attach_bacnet_api(app, *, source, auth) -> None:
             reads = [{"object": body["object"], "property": body["property"]}]
         if not isinstance(reads, list) or not reads:
             return _error("bad_request", "reads must be a non-empty list", 400)
+        cap = _read_cap()
+        if len(reads) > cap:
+            return _error("bad_request", f"reads is limited to {cap} properties (EDGE_BACNET_READ_MAX)", 400)
         pairs: list[tuple[str, str]] = []
         for item in reads:
             if not isinstance(item, dict):
