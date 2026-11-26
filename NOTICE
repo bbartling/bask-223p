@@ -1,7 +1,7 @@
 bask-223p
 Copyright 2026 Ben Bartling
 
-Licensed under the Apache License, Version 2.0.
+Licensed under the MIT License. Copyright (c) 2026 Ben Bartling. See LICENSE.
 
 This project is a read-only client and exporter. It talks to the baskStream
 Niagara module over an authenticated WebSocket and writes ASHRAE 223P

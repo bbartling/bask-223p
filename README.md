@@ -246,4 +246,4 @@ section 11.18.1) and the `bacnet://<device>/<type>,<instance>` URI shape used by
 BACnet-to-RDF output. Official 223P shapes: [open223.info/223p.ttl](https://open223.info/223p.ttl),
 [ASHRAE Standard 223 supporting material](https://data.ashrae.org/standard223/standard223.html).
 
-This repository is licensed under the Apache License, Version 2.0 (see `LICENSE` and `NOTICE`).
+This repository is licensed under the MIT License. Copyright (c) 2026 Ben Bartling. See `LICENSE`.
