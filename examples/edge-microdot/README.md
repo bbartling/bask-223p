@@ -24,7 +24,7 @@ flowchart LR
   subgraph edge
     Poll[Poll loop]
     Hot[Hot cache dict or DuckDB :memory:]
-    Hist[(DuckDB file capped)]
+    Hist[(DuckDB :memory: + Parquet snapshots)]
     FDD[FDD SQL rules timer]
     API[Microdot HTTP/WS]
     UI[Vanilla dashboard]
@@ -94,12 +94,16 @@ The client uses form SCRAM first, then **HTTP Basic** on `/stream/health` and th
 | `EDGE_SITE` | `demo-site` | Site id on samples |
 | `EDGE_HOST` / `EDGE_PORT` | `0.0.0.0` / `8080` | HTTP bind |
 | `EDGE_POLL_INTERVAL` | `15` | Seconds between polls |
-| `EDGE_FLUSH_INTERVAL` | `30` | Batch flush to DuckDB file |
+| `EDGE_FLUSH_INTERVAL` | `30` | Sync hot cache to in-memory DuckDB |
+| `EDGE_SNAPSHOT_INTERVAL` | `300` | Compact ZSTD Parquet snapshot period (seconds) |
+| `EDGE_MEMORY_RETENTION_HOURS` | `48` | Rolling window kept in `:memory:` DuckDB |
 | `EDGE_FDD_INTERVAL` | `60` | Rule evaluation period |
-| `EDGE_DB_PATH` | `var/edge_history.duckdb` | History file |
+| `EDGE_DB_PATH` | `var/edge_history.duckdb` | Snapshot base path (writes `var/snapshots/*.parquet`, no growing `.duckdb` file) |
 | `EDGE_DB_MAX_MB` | `100` | Oldest-first retention cap |
 | `EDGE_HOT_BACKEND` | `dict` | `dict` or `duckdb` (`:memory:`) |
 | `EDGE_ENABLE_SPARQL` | `0` | Load pyoxigraph store. An explicit `0` stays off even if a TTL is loaded |
+| `EDGE_DUCKDB_WASM_URL` | jsDelivr `@duckdb/duckdb-wasm@1.29.0/+esm` | ESM module URL for `/sql` (set to self-host) |
+| `EDGE_DUCKDB_WASM_BUNDLE_BASE` | — | Optional self-hosted base URL for `.wasm` / `.worker.js` |
 | `EDGE_BACNET_ADDRESS` | — | BACpypes3 bind address (`host/prefix`, required for the BACnet driver) |
 | `EDGE_BACNET_DEVICES` | `54545,5007` | Device instances to discover via Who-Is when no point file is given |
 | `NIAGARA_URL` / `USER` / `PASS` | — | Required for Niagara driver |
@@ -145,21 +149,26 @@ Optional native HTTPS on the Pi: set `EDGE_SSL_CERT` and `EDGE_SSL_KEY`, then pa
 ### HTTP routes
 
 - `GET /health` — public status
-- `GET /points`, `/latest`, `/history`, `/rules`, `POST /sparql`, `POST /poll/once` — bearer token
+- `GET /points`, `/latest`, `/history`, `/rules`, `/api/sql-rules`, `POST /sparql`, `POST /poll/once` — bearer token
+- `GET /api/export/bundle?hours=N` — bearer token; returns a ZIP of `samples.parquet`, `fdd_results.parquet`, and `points.parquet` in SI units
+- `GET /sql` — session login; browser DuckDB-WASM SQL runner (zero query compute on the Pi)
 - `WS /live` — bearer token (query or `Authorization`)
 
-## DuckDB on a PC
+## Portable Parquet bundle & browser DuckDB-WASM (`/sql`)
 
-The Pi keeps a single capped file (`EDGE_DB_PATH`). For ad-hoc analysis, copy it read-only to a laptop:
+The edge service keeps DuckDB **in memory** (`duckdb.connect(':memory:')`) fed from the hot cache and periodic writes a compact, ZSTD-compressed Parquet snapshot under `var/snapshots/` (`EDGE_SNAPSHOT_INTERVAL=300`, rotated under `EDGE_DB_MAX_MB=100`). On startup it reloads the newest valid snapshot back into memory.
 
-```bash
-scp pi:/path/to/edge_history.duckdb ./edge_history.duckdb
-duckdb -ui ./edge_history.duckdb
-```
+`GET /api/export/bundle?hours=N` (bearer token required) exports a ZIP containing three portable Parquet files with generic schemas:
 
-Open the rule scripts under `sql/` (stale, out-of-range, flatline, spike). The same files run on the Pi inside the FDD timer.
+| File | Columns | Notes |
+| --- | --- | --- |
+| `samples.parquet` | `ts TIMESTAMPTZ`, `point_id VARCHAR`, `value DOUBLE`, `units VARCHAR` | Normalized to SI units (`degC`, `Pa`, `m3/s`, `W`, `J`, `Hz`, `%`, `%RH`, `ppm`) |
+| `fdd_results.parquet` | `ts TIMESTAMPTZ`, `equipment VARCHAR`, `rule VARCHAR`, `fault_flag BOOLEAN`, `detail VARCHAR` | Recorded FDD sweep results within the window |
+| `points.parquet` | `point_id VARCHAR`, `equipment VARCHAR`, `haystack_tags VARCHAR`, `class_223p VARCHAR`, `unit VARCHAR` | Active point metadata with SI unit |
 
-**Notebook:** `notebooks/edge_duckdb_sweep.ipynb` loads a copied database, runs `01_stale.sql`, and plots bucketed averages. Install `duckdb`, `matplotlib`, and Jupyter on the PC only — do not run the notebook on a 1 GB Pi.
+Open `/sql` (behind session login) to run ad-hoc SQL or any cookbook rule from `sql/*.sql` directly in your browser via **DuckDB-WASM** (loaded from jsDelivr by default; override `EDGE_DUCKDB_WASM_URL` and `EDGE_DUCKDB_WASM_BUNDLE_BASE` to self-host). The browser fetches `/api/export/bundle?hours=N` with your token, registers the three Parquet files plus a `telemetry` compatibility view, and executes queries locally with zero compute on the Pi.
+
+**Notebook (optional):** `notebooks/edge_duckdb_sweep.ipynb` is now optional — `/sql` runs the same `sql/*.sql` rules directly in the browser. If you still prefer a local notebook, download `/api/export/bundle` or inspect a Parquet snapshot from `var/snapshots/` with `duckdb -ui` on a PC.
 
 ## Memory notes (SPARQL)
 
@@ -176,4 +185,4 @@ docker run --rm edge-microdot:test python -m pytest tests -s
 
 - History writes are **batched** (`EDGE_FLUSH_INTERVAL`).
 - Logs go to **stdout** and a small **rotating file** under `/tmp` by default.
-- DuckDB retention trims **oldest rows** when `EDGE_DB_MAX_MB` is exceeded (no aggressive `fsync` per sample).
+- History runs in `:memory:` DuckDB and writes **infrequent atomic ZSTD Parquet snapshots** (`EDGE_SNAPSHOT_INTERVAL`), rotating oldest snapshots to stay under `EDGE_DB_MAX_MB`.

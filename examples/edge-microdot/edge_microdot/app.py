@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 from pathlib import Path
 from typing import Any, Sequence
 
@@ -19,6 +20,8 @@ from edge_microdot.security import AuthBundle, api_auth, attach_auth_routes, req
 from edge_microdot.sparql_kb import SparqlKb
 
 LOG = logging.getLogger(__name__)
+
+DEFAULT_DUCKDB_WASM_URL = "https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.29.0/+esm"
 
 DEFAULT_SPARQL = """PREFIX s223: <http://data.ashrae.org/standard223#>
 PREFIX ref: <https://brickschema.org/schema/Brick/ref#>
@@ -78,6 +81,7 @@ def create_app(
     poll_interval_s: float,
     flush_interval_s: float,
     fdd_interval_s: float,
+    snapshot_interval_s: float = 300.0,
 ) -> Microdot:
     app = Microdot()
     hub = LiveHub()
@@ -86,11 +90,20 @@ def create_app(
     static_dir = Path(__file__).resolve().parent / "static"
     attach_auth_routes(app, auth)
 
+    def _active_targets() -> list[PointTarget]:
+        if targets_list:
+            return targets_list
+        src_targets = getattr(source, "targets", None)
+        if src_targets:
+            return list(src_targets)
+        return []
+
     async def ingest_samples(samples: Sequence[PointSample]) -> None:
         if not samples:
             return
         hot.write(samples)
         history.stage(samples)
+        history.flush()
         await hub.broadcast(
             {"type": "samples", "count": len(samples), "samples": [s.to_dict() for s in samples]}
         )
@@ -117,24 +130,35 @@ def create_app(
             await asyncio.sleep(max(1.0, flush_interval_s))
             try:
                 n = history.flush()
+                n += history.sync_from_hot(hot)
                 if n:
-                    LOG.debug("flushed %s rows", n)
+                    LOG.debug("synced %s rows into in-memory DuckDB", n)
             except Exception:
                 LOG.exception("flush failed")
+
+    async def snapshot_loop() -> None:
+        while True:
+            await asyncio.sleep(max(5.0, snapshot_interval_s))
+            try:
+                snap = await asyncio.to_thread(history.write_snapshot)
+                if snap is not None:
+                    LOG.info("wrote Parquet snapshot %s", snap.name)
+            except Exception:
+                LOG.exception("snapshot failed")
 
     async def fdd_loop() -> None:
         while True:
             await asyncio.sleep(max(1.0, fdd_interval_s))
             try:
-                fdd.run()
+                fdd.run(targets=_active_targets())
             except Exception:
                 LOG.exception("fdd failed")
 
     def start_background_workers() -> None:
-        """Start poll/flush/FDD asyncio loops on a daemon thread (Microdot has no ASGI lifespan)."""
+        """Start poll/flush/snapshot/FDD asyncio loops on a daemon thread."""
 
         async def _supervisor() -> None:
-            await asyncio.gather(poll_loop(), flush_loop(), fdd_loop())
+            await asyncio.gather(poll_loop(), flush_loop(), snapshot_loop(), fdd_loop())
 
         import threading
 
@@ -148,6 +172,12 @@ def create_app(
         index_path = static_dir / "index.html"
         return send_file(str(index_path))
 
+    @app.route("/sql")
+    @auth.login
+    async def sql_page(request):
+        sql_path = static_dir / "sql.html"
+        return send_file(str(sql_path))
+
     @app.route("/static/<path:path>")
     async def static_files(request, path):
         return send_file(str(static_dir / path))
@@ -158,11 +188,15 @@ def create_app(
             "status": "ok",
             "site": site,
             "source": source_kind,
-            "point_count": len(targets_list),
+            "point_count": len(_active_targets()),
             "latest_count": hot.count,
             "last_updated_utc": hot.last_updated_utc,
             "ws_clients": await hub.count(),
-            "history_bytes": history.path.stat().st_size if history.path.exists() else 0,
+            "history_backend": "duckdb:memory",
+            "history_rows": history.row_count(),
+            "history_bytes": history.disk_bytes(),
+            "snapshot_count": history.snapshot_count(),
+            "last_snapshot_utc": history.last_snapshot_utc,
             "sparql_enabled": sparql.enabled,
             "sparql_triples": sparql.triple_count,
             "hot_backend": hot.backend,
@@ -177,7 +211,7 @@ def create_app(
         device = request.args.get("device")
         object_type = request.args.get("object_type")
         out = []
-        for t in targets_list:
+        for t in _active_targets():
             if device and t.device != device:
                 continue
             if object_type and not t.object_id.startswith(f"{object_type},"):
@@ -199,12 +233,53 @@ def create_app(
         end = request.args.get("end")
         limit = int(request.args.get("limit", "200"))
         rows = history.query_history(ref=ref, start=start, end=end, limit=min(limit, 5000))
-        return {"store": "duckdb", "ref": ref, "count": len(rows), "samples": rows}
+        return {"store": "duckdb:memory", "ref": ref, "count": len(rows), "samples": rows}
 
     @app.get("/rules")
     @protect
     async def rules(request):
         return fdd.snapshot()
+
+    @app.get("/api/sql-rules")
+    @protect
+    async def sql_rules(request):
+        wasm_url = (
+            os.environ.get("EDGE_DUCKDB_WASM_URL", "").strip()
+            or os.environ.get("EDGE_DUCKDB_WASM_CDN", "").strip()
+            or DEFAULT_DUCKDB_WASM_URL
+        )
+        bundle_base = os.environ.get("EDGE_DUCKDB_WASM_BUNDLE_BASE", "").strip()
+        return {
+            "duckdb_wasm_url": wasm_url,
+            "duckdb_wasm_bundle_base": bundle_base,
+            "rules": fdd.list_sql_rules(),
+        }
+
+    @app.get("/api/export/bundle")
+    @protect
+    async def export_bundle(request):
+        raw_hours = request.args.get("hours", "24")
+        try:
+            hours = float(raw_hours)
+        except (TypeError, ValueError):
+            return Response("Invalid hours parameter", status_code=400)
+        if hours <= 0 or hours > 720:
+            return Response("hours must be between 0 and 720", status_code=400)
+        bundle_bytes = await asyncio.to_thread(
+            history.export_bundle_zip,
+            _active_targets(),
+            hours=hours,
+            graph=cfg.graph,
+        )
+        return Response(
+            body=bundle_bytes,
+            status_code=200,
+            headers={
+                "Content-Type": "application/zip",
+                "Content-Disposition": 'attachment; filename="edge-fdd-bundle.zip"',
+                "Cache-Control": "no-store",
+            },
+        )
 
     @app.post("/poll/once")
     @protect

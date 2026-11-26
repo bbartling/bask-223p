@@ -14,7 +14,7 @@ scored AS (
     SELECT
         *,
         CASE
-            WHEN upper(replace(units, '°', 'DEG_')) IN ('C', 'CEL', 'DEG_C') THEN value_num
+            WHEN upper(replace(units, '°', 'DEG_')) IN ('C', 'CEL', 'DEG_C', 'DEGC') THEN value_num
             ELSE NULL
         END AS si_value
     FROM latest

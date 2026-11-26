@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>edge-microdot · SQL Explorer (DuckDB-WASM)</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0b0f14;
+      --panel: #141b24;
+      --accent: #3dd6c3;
+      --warn: #ffb020;
+      --alarm: #ff5c5c;
+      --text: #e8eef6;
+      --muted: #8b9bb0;
+      --border: #243041;
+      font-family: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: radial-gradient(circle at 20% 0%, #132033, var(--bg)); color: var(--text); min-height: 100vh; }
+    header { padding: 1rem 1.5rem; display: flex; flex-wrap: wrap; gap: 0.75rem; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); }
+    .brand { display: flex; align-items: center; gap: 1rem; }
+    h1 { margin: 0; font-size: 1.05rem; letter-spacing: 0.04em; text-transform: uppercase; color: var(--accent); }
+    a.nav { color: var(--text); text-decoration: none; font-size: 0.85rem; padding: 0.3rem 0.7rem; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); }
+    a.nav:hover { border-color: var(--accent); color: var(--accent); }
+    .pill { background: var(--panel); border: 1px solid var(--border); border-radius: 999px; padding: 0.3rem 0.85rem; font-size: 0.82rem; color: var(--muted); }
+    main { padding: 1.25rem 1.5rem 2rem; max-width: 1280px; margin: 0 auto; display: grid; gap: 1rem; }
+    .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 1rem; }
+    .controls { display: flex; flex-wrap: wrap; gap: 0.65rem; align-items: center; margin-bottom: 0.75rem; }
+    label { font-size: 0.8rem; color: var(--muted); }
+    select, input, button, textarea {
+      background: #0b0f14; color: var(--text); border: 1px solid var(--border);
+      border-radius: 8px; padding: 0.45rem 0.65rem; font-size: 0.88rem;
+    }
+    button.primary { background: var(--accent); color: #042; border-color: var(--accent); font-weight: 600; cursor: pointer; }
+    button.secondary { cursor: pointer; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    textarea {
+      width: 100%; min-height: 210px; font-family: "JetBrains Mono", "Fira Code", Consolas, monospace;
+      font-size: 0.84rem; line-height: 1.45; resize: vertical;
+    }
+    .meta-row { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0.5rem; margin-top: 0.5rem; font-size: 0.8rem; color: var(--muted); }
+    .err { color: var(--alarm); white-space: pre-wrap; font-family: monospace; font-size: 0.82rem; margin-top: 0.5rem; }
+    .table-wrap { overflow: auto; max-height: 55vh; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+    th, td { border-bottom: 1px solid var(--border); padding: 0.4rem 0.5rem; text-align: left; white-space: nowrap; }
+    th { position: sticky; top: 0; background: #10161e; color: var(--accent); }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <h1>edge-microdot · SQL</h1>
+      <a class="nav" href="/">← Dashboard</a>
+    </div>
+    <span class="pill" id="status">initializing DuckDB-WASM…</span>
+  </header>
+  <main>
+    <section class="panel">
+      <div class="controls">
+        <label for="ruleSelect">Query / Rule</label>
+        <select id="ruleSelect"></select>
+        <label for="hoursSelect">Bundle window</label>
+        <select id="hoursSelect">
+          <option value="1">1 h</option>
+          <option value="6">6 h</option>
+          <option value="24" selected>24 h</option>
+          <option value="72">72 h</option>
+        </select>
+        <button class="secondary" id="reloadBtn" type="button">Reload bundle</button>
+        <label for="paramsInput">Params (JSON)</label>
+        <input id="paramsInput" type="text" size="22" placeholder="[]" />
+        <button class="primary" id="runBtn" type="button" disabled>Run in browser (Ctrl+Enter)</button>
+      </div>
+      <textarea id="sqlEditor" spellcheck="false"></textarea>
+      <div class="meta-row">
+        <span id="bundleInfo">Tables: samples(ts, point_id, value, units), fdd_results(ts, equipment, rule, fault_flag, detail), points(point_id, equipment, haystack_tags, class_223p, unit), view telemetry</span>
+        <span id="execInfo"></span>
+      </div>
+      <div class="err" id="errorBox"></div>
+    </section>
+    <section class="panel table-wrap">
+      <table id="resultTable">
+        <thead id="resultHead"></thead>
+        <tbody id="resultBody"></tbody>
+      </table>
+    </section>
+  </main>
+  <script type="module">
+    const statusEl = document.getElementById('status');
+    const ruleSelect = document.getElementById('ruleSelect');
+    const hoursSelect = document.getElementById('hoursSelect');
+    const paramsInput = document.getElementById('paramsInput');
+    const sqlEditor = document.getElementById('sqlEditor');
+    const runBtn = document.getElementById('runBtn');
+    const reloadBtn = document.getElementById('reloadBtn');
+    const execInfo = document.getElementById('execInfo');
+    const errorBox = document.getElementById('errorBox');
+    const resultHead = document.getElementById('resultHead');
+    const resultBody = document.getElementById('resultBody');
+
+    const QUICK_QUERIES = [
+      {
+        filename: '__samples__',
+        name: 'Latest samples (SI units)',
+        sql: 'SELECT ts, point_id, value, units FROM samples ORDER BY ts DESC LIMIT 50;',
+        default_params: [],
+      },
+      {
+        filename: '__points__',
+        name: 'Point catalog',
+        sql: 'SELECT point_id, equipment, haystack_tags, class_223p, unit FROM points ORDER BY point_id;',
+        default_params: [],
+      },
+      {
+        filename: '__fdd__',
+        name: 'Recorded FDD results',
+        sql: 'SELECT ts, equipment, rule, fault_flag, detail FROM fdd_results ORDER BY ts DESC LIMIT 50;',
+        default_params: [],
+      },
+    ];
+
+    let allQueries = [...QUICK_QUERIES];
+    let authHeaders = {};
+    let db = null;
+    let conn = null;
+
+    async function unzipEntries(arrayBuffer) {
+      const bytes = new Uint8Array(arrayBuffer);
+      const view = new DataView(arrayBuffer);
+      let eocd = -1;
+      for (let i = bytes.length - 22; i >= Math.max(0, bytes.length - 65557); i--) {
+        if (view.getUint32(i, true) === 0x06054b50) {
+          eocd = i;
+          break;
+        }
+      }
+      if (eocd < 0) throw new Error('Invalid ZIP bundle (EOCD not found)');
+      const totalEntries = view.getUint16(eocd + 10, true);
+      let ptr = view.getUint32(eocd + 16, true);
+      const decoder = new TextDecoder();
+      const out = {};
+      for (let idx = 0; idx < totalEntries; idx++) {
+        if (view.getUint32(ptr, true) !== 0x02014b50) throw new Error('Invalid ZIP central directory');
+        const method = view.getUint16(ptr + 10, true);
+        const compSize = view.getUint32(ptr + 20, true);
+        const nameLen = view.getUint16(ptr + 28, true);
+        const extraLen = view.getUint16(ptr + 30, true);
+        const commentLen = view.getUint16(ptr + 32, true);
+        const localOffset = view.getUint32(ptr + 42, true);
+        const name = decoder.decode(bytes.subarray(ptr + 46, ptr + 46 + nameLen));
+        ptr += 46 + nameLen + extraLen + commentLen;
+
+        if (view.getUint32(localOffset, true) !== 0x04034b50) throw new Error('Invalid ZIP local header');
+        const lNameLen = view.getUint16(localOffset + 26, true);
+        const lExtraLen = view.getUint16(localOffset + 28, true);
+        const dataStart = localOffset + 30 + lNameLen + lExtraLen;
+        const compressed = bytes.subarray(dataStart, dataStart + compSize);
+        if (method === 0) {
+          out[name] = compressed.slice();
+        } else if (method === 8) {
+          const ds = new DecompressionStream('deflate-raw');
+          const writer = ds.writable.getWriter();
+          writer.write(compressed);
+          writer.close();
+          const buf = await new Response(ds.readable).arrayBuffer();
+          out[name] = new Uint8Array(buf);
+        } else {
+          throw new Error(Unsupported ZIP compression method  for );
+        }
+      }
+      return out;
+    }
+
+    async function loadToken() {
+      const resp = await fetch('/auth/ws-token', { credentials: 'include' });
+      if (!resp.ok) {
+        location.href = '/login';
+        throw new Error('Authentication required');
+      }
+      const data = await resp.json();
+      authHeaders = { Authorization: Bearer  };
+    }
+
+    async function initDuckDb(wasmUrl, bundleBase) {
+      statusEl.textContent = 'loading DuckDB-WASM…';
+      const duckdb = await import(wasmUrl);
+      let bundle;
+      if (bundleBase) {
+        const base = bundleBase.replace(/\/$/, '');
+        bundle = {
+          mainModule: ${base}/duckdb-eh.wasm,
+          mainWorker: ${base}/duckdb-browser-eh.worker.js,
+        };
+      } else {
+        const bundles = duckdb.getJsDelivrBundles();
+        bundle = await duckdb.selectBundle(bundles);
+      }
+      const workerBlob = new Blob([importScripts("");], { type: 'text/javascript' });
+      const worker = new Worker(URL.createObjectURL(workerBlob));
+      const logger = new duckdb.ConsoleLogger(duckdb.LogLevel.WARNING);
+      db = new duckdb.AsyncDuckDB(logger, worker);
+      await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
+      conn = await db.connect();
+      await conn.query("SET TimeZone = 'UTC'");
+    }
+
+    async function loadBundle() {
+      statusEl.textContent = 'fetching Parquet bundle…';
+      errorBox.textContent = '';
+      const hours = hoursSelect.value || '24';
+      const resp = await fetch(/api/export/bundle?hours=, { headers: authHeaders });
+      if (!resp.ok) throw new Error(Bundle export failed: HTTP );
+      const zipBuf = await resp.arrayBuffer();
+      const files = await unzipEntries(zipBuf);
+      for (const fname of ['samples.parquet', 'fdd_results.parquet', 'points.parquet']) {
+        if (!files[fname]) throw new Error(Missing  in bundle);
+        await db.registerFileBuffer(fname, files[fname]);
+      }
+      await conn.query("CREATE OR REPLACE VIEW samples AS SELECT * FROM read_parquet('samples.parquet');");
+      await conn.query("CREATE OR REPLACE VIEW fdd_results AS SELECT * FROM read_parquet('fdd_results.parquet');");
+      await conn.query("CREATE OR REPLACE VIEW points AS SELECT * FROM read_parquet('points.parquet');");
+      await conn.query(
+        "CREATE OR REPLACE VIEW telemetry AS SELECT point_id AS ref, ts AS timestamp_utc, value AS value_num, CAST(value AS VARCHAR) AS value_text, units FROM samples;"
+      );
+      const cntRes = await conn.query('SELECT COUNT(*) AS n FROM samples');
+      const nSamples = Number(cntRes.toArray()[0]?.n ?? 0);
+      statusEl.textContent = 
+eady (browser WASM) ·  samples (h);
+      runBtn.disabled = false;
+    }
+
+    function renderTable(arrowResult) {
+      const fields = arrowResult.schema.fields.map(f => f.name);
+      const rows = arrowResult.toArray();
+      resultHead.innerHTML = '';
+      resultBody.innerHTML = '';
+      const trh = document.createElement('tr');
+      for (const name of fields) {
+        const th = document.createElement('th');
+        th.textContent = name;
+        trh.appendChild(th);
+      }
+      resultHead.appendChild(trh);
+      for (const row of rows) {
+        const tr = document.createElement('tr');
+        for (const name of fields) {
+          const td = document.createElement('td');
+          const val = row[name];
+          td.textContent = val === null || val === undefined ? '' : String(val);
+          tr.appendChild(td);
+        }
+        resultBody.appendChild(tr);
+      }
+      return rows.length;
+    }
+
+    async function runQuery() {
+      if (!conn) return;
+      errorBox.textContent = '';
+      const sql = sqlEditor.value.trim();
+      if (!sql) return;
+      const t0 = performance.now();
+      try {
+        const rawParams = paramsInput.value.trim();
+        const params = rawParams ? JSON.parse(rawParams) : [];
+        let res;
+        if (Array.isArray(params) && params.length > 0) {
+          const stmt = await conn.prepare(sql);
+          try {
+            res = await stmt.query(...params);
+          } finally {
+            await stmt.close();
+          }
+        } else {
+          res = await conn.query(sql);
+        }
+        const n = renderTable(res);
+        const dt = (performance.now() - t0).toFixed(1);
+        execInfo.textContent = ${n} row(s) in  ms (local DuckDB-WASM);
+      } catch (err) {
+        errorBox.textContent = String(err && err.message ? err.message : err);
+      }
+    }
+
+    function selectQuery(idx) {
+      const q = allQueries[idx] || allQueries[0];
+      sqlEditor.value = q.sql;
+      paramsInput.value = q.default_params && q.default_params.length ? JSON.stringify(q.default_params) : '[]';
+    }
+
+    ruleSelect.addEventListener('change', () => selectQuery(Number(ruleSelect.value)));
+    runBtn.addEventListener('click', runQuery);
+    reloadBtn.addEventListener('click', async () => {
+      try {
+        await loadBundle();
+        await runQuery();
+      } catch (err) {
+        errorBox.textContent = String(err);
+      }
+    });
+    sqlEditor.addEventListener('keydown', (ev) => {
+      if ((ev.ctrlKey || ev.metaKey) && ev.key === 'Enter') {
+        ev.preventDefault();
+        runQuery();
+      }
+    });
+
+    async function bootstrap() {
+      try {
+        await loadToken();
+        const cfg = await fetch('/api/sql-rules', { headers: authHeaders }).then(r => r.json());
+        allQueries = [...QUICK_QUERIES, ...(cfg.rules || [])];
+        ruleSelect.innerHTML = '';
+        allQueries.forEach((item, idx) => {
+          const opt = document.createElement('option');
+          opt.value = String(idx);
+          opt.textContent = item.filename.startsWith('__') ? item.name : sql/;
+          ruleSelect.appendChild(opt);
+        });
+        selectQuery(0);
+        await initDuckDb(cfg.duckdb_wasm_url, cfg.duckdb_wasm_bundle_base);
+        await loadBundle();
+        await runQuery();
+      } catch (err) {
+        statusEl.textContent = 'error';
+        errorBox.textContent = String(err && err.stack ? err.stack : err);
+      }
+    }
+    bootstrap();
+  </script>
+</body>
+</html>

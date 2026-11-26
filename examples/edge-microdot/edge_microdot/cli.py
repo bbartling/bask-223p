@@ -57,6 +57,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--poll-interval", type=float, default=None)
     p.add_argument("--flush-interval", type=float, default=None)
     p.add_argument("--fdd-interval", type=float, default=None)
+    p.add_argument("--snapshot-interval", type=float, default=None)
+    p.add_argument("--retention-hours", type=float, default=None)
     p.add_argument("--db", type=Path, default=None, help="DuckDB history file path")
     p.add_argument("--db-max-mb", type=int, default=None)
     p.add_argument("--hot-backend", choices=["dict", "duckdb"], default=None)
@@ -157,8 +159,9 @@ def build_runtime(argv: Sequence[str] | None = None) -> tuple:
     hot = HotCache(backend=hot_backend)  # type: ignore[arg-type]
     db_path = args.db or Path(os.environ.get("EDGE_DB_PATH", "var/edge_history.duckdb"))
     max_mb = args.db_max_mb or int(os.environ.get("EDGE_DB_MAX_MB", "100"))
-    history = HistoryStore(db_path, max_bytes=max_mb * 1024 * 1024)
-    fdd = FddEngine(history=history)
+    retention_hours = args.retention_hours or float(os.environ.get("EDGE_MEMORY_RETENTION_HOURS", "48"))
+    history = HistoryStore(db_path, max_bytes=max_mb * 1024 * 1024, retention_hours=retention_hours)
+    fdd = FddEngine(history=history, targets=targets)
     enable_sparql = _sparql_enabled(cfg)
     if not enable_sparql:
         sparql = SparqlKb(None)
@@ -168,6 +171,7 @@ def build_runtime(argv: Sequence[str] | None = None) -> tuple:
     poll_interval = args.poll_interval or float(os.environ.get("EDGE_POLL_INTERVAL", "15"))
     flush_interval = args.flush_interval or float(os.environ.get("EDGE_FLUSH_INTERVAL", "30"))
     fdd_interval = args.fdd_interval or float(os.environ.get("EDGE_FDD_INTERVAL", "60"))
+    snapshot_interval = args.snapshot_interval or float(os.environ.get("EDGE_SNAPSHOT_INTERVAL", "300"))
     host = args.host or os.environ.get("EDGE_HOST", "0.0.0.0")
     port = args.port or int(os.environ.get("EDGE_PORT", "8080"))
 
@@ -186,6 +190,7 @@ def build_runtime(argv: Sequence[str] | None = None) -> tuple:
         poll_interval_s=poll_interval,
         flush_interval_s=flush_interval,
         fdd_interval_s=fdd_interval,
+        snapshot_interval_s=snapshot_interval,
     )
     return app, source, hot, history, host, port, args
 
@@ -205,6 +210,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 hot.write(samples)
                 history.stage(samples)
                 history.flush()
+                history.write_snapshot()
                 for s in samples:
                     print(s.to_dict())
                 if hasattr(source, "close"):
