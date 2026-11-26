@@ -74,36 +74,56 @@ LIMIT 50"""
 
 
 class LiveHub:
-    def __init__(self) -> None:
-        self._clients: set[Any] = set()
-        self._lock = asyncio.Lock()
+    """Fan out live samples on the server loop without waiting on a slow client.
 
-    async def add(self, ws: Any) -> None:
+    Each socket has a bounded queue. A full queue means the client is behind,
+    so that client is dropped. ``max_clients`` caps how many sockets stay open.
+    """
+
+    def __init__(self, *, max_clients: int = 32, queue_size: int = 8) -> None:
+        self._clients: dict[Any, asyncio.Queue[str]] = {}
+        self._tasks: dict[Any, asyncio.Task[None]] = {}
+        self._lock = asyncio.Lock()
+        self.max_clients = max(1, max_clients)
+        self.queue_size = max(1, queue_size)
+
+    async def add(self, ws: Any) -> bool:
         async with self._lock:
-            self._clients.add(ws)
+            if len(self._clients) >= self.max_clients:
+                return False
+            queue: asyncio.Queue[str] = asyncio.Queue(maxsize=self.queue_size)
+            self._clients[ws] = queue
+            self._tasks[ws] = asyncio.create_task(self._pump(ws, queue))
+            return True
 
     async def remove(self, ws: Any) -> None:
         async with self._lock:
-            self._clients.discard(ws)
+            self._clients.pop(ws, None)
+            task = self._tasks.pop(ws, None)
+        if task is not None and task is not asyncio.current_task() and not task.done():
+            task.cancel()
 
     async def count(self) -> int:
         async with self._lock:
             return len(self._clients)
 
+    async def _pump(self, ws: Any, queue: asyncio.Queue[str]) -> None:
+        try:
+            while True:
+                message = await queue.get()
+                await ws.send(message)
+        except Exception:
+            await self.remove(ws)
+
     async def broadcast(self, payload: dict[str, Any]) -> None:
         message = json.dumps(payload)
         async with self._lock:
-            clients = list(self._clients)
-        dead: list[Any] = []
-        for ws in clients:
+            clients = list(self._clients.items())
+        for ws, queue in clients:
             try:
-                await ws.send(message)
-            except Exception:
-                dead.append(ws)
-        if dead:
-            async with self._lock:
-                for ws in dead:
-                    self._clients.discard(ws)
+                queue.put_nowait(message)
+            except asyncio.QueueFull:
+                await self.remove(ws)
 
 
 def tls_name_allowed(name: str) -> bool:
@@ -142,7 +162,10 @@ def create_app(
     snapshot_interval_s: float = 300.0,
 ) -> Microdot:
     app = Microdot()
-    hub = LiveHub()
+    hub = LiveHub(
+        max_clients=int(os.environ.get("EDGE_LIVE_CLIENTS", "32")),
+        queue_size=int(os.environ.get("EDGE_LIVE_QUEUE", "8")),
+    )
     targets_list = targets if isinstance(targets, list) else list(targets)
     poll_lock = asyncio.Lock()
     static_dir = Path(__file__).resolve().parent / "static"
@@ -156,23 +179,20 @@ def create_app(
             return list(src_targets)
         return []
 
-    async def ingest_samples(samples: Sequence[PointSample]) -> None:
-        if not samples:
-            return
-        hot.write(samples)
-        history.stage(samples)
-        await hub.broadcast(
-            {"type": "samples", "count": len(samples), "samples": [s.to_dict() for s in samples]}
-        )
-
     async def poll_once() -> list[PointSample]:
         async with poll_lock:
             if hasattr(source, "poll_once_async"):
                 samples = await source.poll_once_async()
             else:
                 samples = await asyncio.to_thread(source.poll_once)
-            await ingest_samples(samples)
-            return samples
+            if samples:
+                hot.write(samples)
+                history.stage(samples)
+        if samples:
+            await hub.broadcast(
+                {"type": "samples", "count": len(samples), "samples": [s.to_dict() for s in samples]}
+            )
+        return samples
 
     async def poll_loop() -> None:
         while True:
@@ -186,8 +206,12 @@ def create_app(
         while True:
             await asyncio.sleep(max(1.0, flush_interval_s))
             try:
-                n = history.flush()
-                history.prune_memory()
+                def _flush() -> int:
+                    n = history.flush()
+                    history.prune_memory()
+                    return n
+
+                n = await asyncio.to_thread(_flush)
                 from edge_microdot.logging_setup import drain_logs
 
                 drain_logs()
@@ -211,21 +235,30 @@ def create_app(
         while True:
             await asyncio.sleep(max(1.0, fdd_interval_s))
             try:
-                fdd.run(targets=_active_targets())
+                await asyncio.to_thread(fdd.run, targets=_active_targets())
             except Exception:
                 LOG.exception("fdd failed")
 
-    def start_background_workers() -> None:
-        """Start poll/flush/snapshot/FDD asyncio loops on a daemon thread."""
+    def start_background_workers() -> list[asyncio.Task[None]]:
+        """Start poll, flush, snapshot, and FDD tasks on the running loop."""
+        return [
+            asyncio.create_task(poll_loop()),
+            asyncio.create_task(flush_loop()),
+            asyncio.create_task(snapshot_loop()),
+            asyncio.create_task(fdd_loop()),
+        ]
 
-        async def _supervisor() -> None:
-            await asyncio.gather(poll_loop(), flush_loop(), snapshot_loop(), fdd_loop())
-
-        import threading
-
-        threading.Thread(target=lambda: asyncio.run(_supervisor()), daemon=True).start()
+    async def serve(host: str = "127.0.0.1", port: int = 8080, ssl: Any = None) -> None:
+        tasks = start_background_workers()
+        try:
+            await app.start_server(host=host, port=port, debug=False, ssl=ssl)
+        finally:
+            for task in tasks:
+                task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
 
     app.start_background_workers = start_background_workers  # type: ignore[attr-defined]
+    app.serve = serve  # type: ignore[attr-defined]
 
     @app.route("/")
     @auth.login
@@ -401,7 +434,9 @@ def create_app(
             if not stored or auth.tokens.verify_access(str(stored)) is None:
                 return gate
         ws = await websocket_upgrade(request)
-        await hub.add(ws)
+        if not await hub.add(ws):
+            await ws.close()
+            return
         try:
             snap = hot.snapshot_latest()
             if snap:

@@ -251,9 +251,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             raise SystemExit(0)
 
         signal.signal(signal.SIGTERM, _on_sigterm)
-        app.start_background_workers()
         ssl_ctx = _load_ssl_context()
-        app.run(host=host, port=port, debug=False, ssl=ssl_ctx)
+        asyncio.run(app.serve(host=host, port=port, ssl=ssl_ctx))
         return 0
     finally:
         history.close()
