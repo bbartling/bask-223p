@@ -124,7 +124,11 @@
         if (!faultsByRef.has(f.ref)) faultsByRef.set(f.ref, []);
         faultsByRef.get(f.ref).push(f);
         const tr = document.createElement('tr');
-        tr.innerHTML = `<td>${f.rule_name}</td><td>${f.ref}</td><td>${f.severity}</td><td>${f.message}</td>`;
+        for (const key of ['rule_name', 'ref', 'severity', 'message']) {
+          const td = document.createElement('td');
+          td.textContent = f[key] == null ? '' : String(f[key]);
+          tr.appendChild(td);
+        }
         faultRows.appendChild(tr);
       });
       document.querySelectorAll('.card[data-ref]').forEach(card => {
