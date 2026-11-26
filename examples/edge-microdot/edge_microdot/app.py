@@ -126,6 +126,21 @@ class LiveHub:
                 await self.remove(ws)
 
 
+class _StreamedFile:
+    """File body that Microdot reads in chunks and deletes when the response ends."""
+
+    def __init__(self, path: Path) -> None:
+        self._path = path
+        self._fh = path.open("rb")
+
+    def read(self, n: int = -1) -> bytes:
+        return self._fh.read(n)
+
+    def close(self) -> None:
+        self._fh.close()
+        self._path.unlink(missing_ok=True)
+
+
 def tls_name_allowed(name: str) -> bool:
     """True when Caddy may issue a certificate for this SNI or IP.
 
@@ -372,14 +387,14 @@ def create_app(
             return Response("Invalid hours parameter", status_code=400)
         if hours <= 0 or hours > 720:
             return Response("hours must be between 0 and 720", status_code=400)
-        bundle_bytes = await asyncio.to_thread(
-            history.export_bundle_zip,
+        bundle_path = await asyncio.to_thread(
+            history.export_bundle_file,
             _active_targets(),
             hours=hours,
             graph=cfg.graph,
         )
         return Response(
-            body=bundle_bytes,
+            body=_StreamedFile(bundle_path),
             status_code=200,
             headers={
                 "Content-Type": "application/zip",

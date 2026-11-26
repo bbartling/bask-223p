@@ -1,14 +1,12 @@
 """In-memory DuckDB history store with Open-FDD core schema and Parquet snapshots."""
 from __future__ import annotations
 
-import io
 import json
 import logging
 import os
 import re
 import shutil
 import subprocess
-import tempfile
 import threading
 import zipfile
 from datetime import datetime, timezone
@@ -211,6 +209,7 @@ class HistoryStore:
         max_snapshots: int = 5,
         retention_hours: float = 48.0,
         max_memory_rows: int = 250_000,
+        memory_limit_mb: int = 256,
     ) -> None:
         import duckdb
 
@@ -221,6 +220,7 @@ class HistoryStore:
         self.max_snapshots = max(1, int(max_snapshots))
         self.retention_hours = max(0.1, float(retention_hours))
         self.max_memory_rows = max(100, int(max_memory_rows))
+        self.memory_limit_mb = max(32, min(int(memory_limit_mb), 4096))
         self._lock = threading.Lock()
         self._pending: list[dict[str, Any]] = []
         self._dirty_since_snapshot = False
@@ -231,7 +231,7 @@ class HistoryStore:
         self._cleanup_tmp_locked()
         self.conn = duckdb.connect(":memory:")
         self.conn.execute("SET TimeZone = 'UTC'")
-        self.conn.execute("SET memory_limit = '256MB'")
+        self.conn.execute(f"SET memory_limit = '{self.memory_limit_mb}MB'")
         self.conn.execute("SET threads = 2")
         self.conn.execute("SET autoinstall_known_extensions = false")
         self.conn.execute("SET autoload_known_extensions = false")
@@ -1222,11 +1222,39 @@ class HistoryStore:
         while len(gens) > 1 and sum(gen.nbytes() for gen in gens) > self.max_bytes:
             self._remove_generation(gens.pop(0))
 
-    def _copy_parquet(self, select_sql: str, dest: Path) -> None:
+    def _copy_parquet(self, select_sql: str, dest: Path, params: Sequence[Any] = ()) -> None:
         self.conn.execute(
-            f"COPY ({select_sql}) TO '{_sql_quote(dest)}' (FORMAT PARQUET, COMPRESSION ZSTD)"
+            f"COPY ({select_sql}) TO ? (FORMAT PARQUET, COMPRESSION ZSTD)",
+            [*params, str(dest)],
         )
         _fsync_file(dest)
+
+    def _copy_export_locked(self, staging: Path, hours: float) -> None:
+        window = "CURRENT_TIMESTAMP - (CAST(? AS DOUBLE) * INTERVAL '1' HOUR)"
+        self._copy_parquet(
+            f"""
+            SELECT site_id, point_key, ts, value
+            FROM fdd.input_sample
+            WHERE ts >= {window}
+            ORDER BY ts ASC
+            """,
+            staging / "input_sample.parquet",
+            [hours],
+        )
+        self._copy_parquet(
+            f"SELECT {', '.join(POINT_COLUMNS)} FROM fdd.point",
+            staging / "point.parquet",
+        )
+        self._copy_parquet(
+            f"""
+            SELECT {", ".join(RULE_RESULT_COLUMNS)}
+            FROM fdd.rule_result
+            WHERE window_end >= {window}
+            ORDER BY window_end ASC
+            """,
+            staging / "rule_result.parquet",
+            [hours],
+        )
 
     def write_snapshot(self, *, force: bool = False) -> Path | None:
         """Write one fsynced generation (sample, point, optional rule, manifest last)."""
@@ -1297,6 +1325,41 @@ class HistoryStore:
             self._clock_sane = True
             return final_dir / "sample_store.parquet"
 
+    def export_bundle_file(
+        self,
+        targets: Sequence[PointTarget],
+        *,
+        hours: float = 24.0,
+        graph: Any = None,
+    ) -> Path:
+        """Copy the export under the store lock, then zip it outside the lock.
+
+        The zip is written under the snapshot directory, not ``/tmp``. The
+        caller streams it and deletes it.
+        """
+        hours = max(0.01, min(float(hours), 720.0))
+        if targets:
+            self.upsert_points(targets, graph=graph)
+        export_root = self.snapshot_dir / "exports"
+        export_root.mkdir(parents=True, exist_ok=True)
+        token = f"{threading.get_ident()}-{os.urandom(4).hex()}"
+        staging = export_root / f".staging-{token}"
+        staging.mkdir()
+        zip_path = export_root / f"bundle-{token}.zip"
+        try:
+            with self._lock:
+                self._flush_locked()
+                self._copy_export_locked(staging, hours)
+            with zipfile.ZipFile(zip_path, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
+                for name in BUNDLE_FILES:
+                    zf.write(staging / name, arcname=name)
+        except Exception:
+            zip_path.unlink(missing_ok=True)
+            raise
+        finally:
+            shutil.rmtree(staging, ignore_errors=True)
+        return zip_path
+
     def export_bundle_zip(
         self,
         targets: Sequence[PointTarget],
@@ -1305,49 +1368,11 @@ class HistoryStore:
         graph: Any = None,
     ) -> bytes:
         """Export Open-FDD core Parquet tables (SI) as a ZIP bundle."""
-        hours = max(0.01, min(float(hours), 720.0))
-        if targets:
-            self.upsert_points(targets, graph=graph)
-        with self._lock:
-            self._flush_locked()
-            with tempfile.TemporaryDirectory() as tmpdir:
-                tmp = Path(tmpdir)
-                input_pq = tmp / "input_sample.parquet"
-                point_pq = tmp / "point.parquet"
-                result_pq = tmp / "rule_result.parquet"
-                self.conn.execute(
-                    f"""
-                    COPY (
-                        SELECT site_id, point_key, ts, value
-                        FROM fdd.input_sample
-                        WHERE ts >= CURRENT_TIMESTAMP - (CAST({hours} AS DOUBLE) * INTERVAL '1' HOUR)
-                        ORDER BY ts ASC
-                    ) TO '{_sql_quote(input_pq)}' (FORMAT PARQUET, COMPRESSION ZSTD)
-                    """
-                )
-                self.conn.execute(
-                    f"""
-                    COPY (
-                        SELECT {", ".join(POINT_COLUMNS)} FROM fdd.point
-                    ) TO '{_sql_quote(point_pq)}' (FORMAT PARQUET, COMPRESSION ZSTD)
-                    """
-                )
-                self.conn.execute(
-                    f"""
-                    COPY (
-                        SELECT {", ".join(RULE_RESULT_COLUMNS)}
-                        FROM fdd.rule_result
-                        WHERE window_end >= CURRENT_TIMESTAMP - (CAST({hours} AS DOUBLE) * INTERVAL '1' HOUR)
-                        ORDER BY window_end ASC
-                    ) TO '{_sql_quote(result_pq)}' (FORMAT PARQUET, COMPRESSION ZSTD)
-                    """
-                )
-                buf = io.BytesIO()
-                with zipfile.ZipFile(buf, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
-                    zf.write(input_pq, arcname="input_sample.parquet")
-                    zf.write(point_pq, arcname="point.parquet")
-                    zf.write(result_pq, arcname="rule_result.parquet")
-                return buf.getvalue()
+        path = self.export_bundle_file(targets, hours=hours, graph=graph)
+        try:
+            return path.read_bytes()
+        finally:
+            path.unlink(missing_ok=True)
 
     def query(self, sql: str, params: list[Any] | None = None) -> list[tuple]:
         with self._lock:

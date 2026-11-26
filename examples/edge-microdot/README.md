@@ -99,6 +99,8 @@ The client uses form SCRAM first, then **HTTP Basic** on `/stream/health` and th
 | `EDGE_DURABLE_MINUTES` | `15` when SD card, else `5` | Minutes between Parquet snapshots and log-file drains |
 | `EDGE_SNAPSHOT_INTERVAL` | durable minutes, in seconds | Overrides the snapshot cadence |
 | `EDGE_MEMORY_RETENTION_HOURS` | `48` | Rolling window kept in `:memory:` DuckDB |
+| `EDGE_RAM_ROWS` | `250000` | Maximum sample rows kept in memory |
+| `EDGE_DUCKDB_MEMORY_MB` | `256` | DuckDB `memory_limit`, inside the 512m container cap |
 | `EDGE_LOG_FLUSH_MINUTES` | same as durable minutes | File-log drain interval. Stdout stays immediate |
 | `EDGE_LOG_LEVEL` | `INFO` (`WARNING` in Compose) | Compose defaults to WARNING so Docker's json log stays quiet |
 | `EDGE_FDD_INTERVAL` | `60` | Rule evaluation period |

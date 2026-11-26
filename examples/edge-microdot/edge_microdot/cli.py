@@ -45,6 +45,17 @@ def resolve_snapshot_interval(cli_value: float | None, *, sd_card: bool) -> floa
     return max(60.0, durable_min * 60.0)
 
 
+def _env_int(name: str, default: int, *, minimum: int) -> int:
+    raw = os.environ.get(name, str(default)).strip()
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise SystemExit(f"{name} must be an integer") from exc
+    if value < minimum:
+        raise SystemExit(f"{name} must be at least {minimum}")
+    return value
+
+
 def _env_bool(name: str, default: bool = False) -> bool:
     val = os.environ.get(name)
     if val is None:
@@ -174,7 +185,15 @@ def build_runtime(argv: Sequence[str] | None = None) -> tuple:
     max_mb = args.db_max_mb or int(os.environ.get("EDGE_DB_MAX_MB", "100"))
     retention_hours = args.retention_hours or float(os.environ.get("EDGE_MEMORY_RETENTION_HOURS", "48"))
     sd_card = _env_bool("EDGE_SD_CARD")
-    history = HistoryStore(db_path, max_bytes=max_mb * 1024 * 1024, retention_hours=retention_hours)
+    ram_rows = _env_int("EDGE_RAM_ROWS", 250_000, minimum=100)
+    duck_mb = _env_int("EDGE_DUCKDB_MEMORY_MB", 256, minimum=32)
+    history = HistoryStore(
+        db_path,
+        max_bytes=max_mb * 1024 * 1024,
+        retention_hours=retention_hours,
+        max_memory_rows=ram_rows,
+        memory_limit_mb=duck_mb,
+    )
     fdd = FddEngine(history=history, targets=targets)
     from edge_microdot.openfdd_pin import startup_lines
     from edge_microdot.ui_api import applicability_lines
