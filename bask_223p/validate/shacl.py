@@ -153,30 +153,46 @@ def _ontology_files(ontology_dir: Path | None) -> list[Path]:
     ]
 
 
+# OntoEnv's own client fails on the plain-HTTP VAEM document from GitHub-hosted runners.
+# These HTTPS (and one HTTP) documents are the closure 223P imports: SHACL, QUDT 3.4.0, SKOS, VAEM.
+_CLOSURE_URLS = (
+    "https://www.w3.org/ns/shacl.ttl",
+    "https://qudt.org/3.4.0/shacl/qudt-all",
+    "https://www.w3.org/2009/08/skos-reference/skos.rdf",
+    "https://www.linkedmodel.org/schema/vaem.ttl",
+)
+
+
 def materialize_223p_closure(shapes_path: Path, dest: Path) -> list[str]:
     """Download the imports of the pinned 223P file into ``dest``.
 
     This is the only online step. ``validate_223p`` reads those files offline.
     """
+    import urllib.request
+
     shapes_path = _pinned_shapes_path(shapes_path)
     dest.mkdir(parents=True, exist_ok=True)
+    for url in _CLOSURE_URLS:
+        request = urllib.request.Request(url, headers={"User-Agent": "open-hvac-edge"})
+        with urllib.request.urlopen(request, timeout=60) as response:
+            payload = response.read()
+        suffix = Path(url).suffix or ".ttl"
+        token = hashlib.sha256(url.encode("utf-8")).hexdigest()[:16]
+        (dest / f"{token}{suffix}").write_bytes(payload)
     try:
         from ontoenv import OntoEnv
     except ImportError as exc:
         raise RuntimeError('OntoEnv needed: pip install "bask-223p[graph]"') from exc
-    names: list[str] = []
-    with OntoEnv(temporary=True, offline=False, strict=True) as env:
-        env.add(str(shapes_path), fetch_imports=True)
+    with OntoEnv(temporary=True, offline=True, strict=True) as env:
+        _add_local_ontology(env, str(shapes_path))
+        for path in _ontology_files(dest):
+            _add_local_ontology(env, str(path))
         missing = [str(item) for item in env.missing_imports(S223_ROOT)]
         if missing:
             raise ValueError("Unresolved owl:imports: " + ", ".join(missing))
-        for name in env.list_closure(S223_ROOT):
-            if str(name) == S223_ROOT:
-                continue
-            graph = env.get_graph(name)
-            token = hashlib.sha256(str(name).encode("utf-8")).hexdigest()[:16]
-            graph.serialize(destination=str(dest / f"{token}.ttl"), format="turtle")
-            names.append(str(name))
+        names = [str(name) for name in env.list_closure(S223_ROOT) if str(name) != S223_ROOT]
+    if len(names) != len(_CLOSURE_URLS):
+        raise ValueError(f"Expected {len(_CLOSURE_URLS)} imported ontologies, got {names}")
     return names
 
 
