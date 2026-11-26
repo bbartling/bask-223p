@@ -59,6 +59,18 @@ will not work. Route-aware mode keeps addresses such as
 **not** poll every object on those controllers. Present-value polling runs
 only for points listed in `--points`. See [docs/bacnet.md](docs/bacnet.md).
 
+Compose does not pass `--points`. The process loads `EDGE_POINTS_FILE`
+(default `/app/examples/edge-microdot/var/points.csv`, the mounted `./var`
+directory) when that file exists. Without it the BACnet profile polls nothing
+and logs `no points are configured`. Put a CSV there before starting:
+
+```csv
+device,object,property,units,label
+10001,"analog-input,1",present-value,degC,Zone temperature
+```
+
+`object` is `type,instance` and is quoted because it contains a comma. `property` defaults to `present-value` when the cell is empty.
+
 Native (on the Pi):
 
 ```bash
@@ -124,6 +136,7 @@ The client uses form SCRAM first, then **HTTP Basic** on `/stream/health` and th
 | `EDGE_DUCKDB_WASM_BUNDLE_BASE` | `/static/vendor/duckdb` | Base for `duckdb-eh.wasm` and the worker |
 | `EDGE_BACNET_ADDRESS` | — | BACpypes3 bind address (`host/prefix`, required for the BACnet driver) |
 | `EDGE_BACNET_DEVICES` | `54545,5007` | Named device instances for Who-Is. Not an object-list poll |
+| `EDGE_POINTS_FILE` | `/app/examples/edge-microdot/var/points.csv` | Points file used when `--points` is omitted. CSV columns: `device,object,property,units,label` |
 | `EDGE_BACNET_MAX_INFLIGHT` | `1` | In-flight BACnet requests per device |
 | `EDGE_BACNET_CHUNK_DELAY_S` | `0.05` | Gap between requests to one device. Raise on MS/TP |
 | `EDGE_BACNET_WHOIS_TIMEOUT` | `5` | Seconds to wait for I-Am |
