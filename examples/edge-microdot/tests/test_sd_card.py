@@ -33,7 +33,7 @@ def test_memory_flush_does_not_write_parquet(tmp_path):
     assert store.conn.execute("SELECT COUNT(*) FROM fdd.sample_store").fetchone()[0] == 20
     assert list(store.snapshot_dir.glob("*.parquet")) == []
     assert store.write_snapshot(force=True) is not None
-    assert list(store.snapshot_dir.glob("sample_store_*.parquet"))
+    assert list(store.snapshot_dir.glob("gen_*/sample_store.parquet"))
     store.close()
 
 

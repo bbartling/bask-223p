@@ -5,12 +5,15 @@ import io
 import json
 import logging
 import os
+import re
+import shutil
+import subprocess
 import tempfile
 import threading
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, NamedTuple, Sequence
 
 from edge_microdot.cache import HotCache, _split_value
 from edge_microdot.models import PointSample, PointTarget, utc_now_iso
@@ -69,6 +72,74 @@ BUNDLE_FILES = ("input_sample.parquet", "point.parquet", "rule_result.parquet")
 
 def _sql_quote(path: Path) -> str:
     return str(path).replace("'", "''")
+
+
+_GEN_DIR = re.compile(r"^gen_(\d+)$")
+_FLAT_SAMPLE = re.compile(r"^(?:sample_store|input_sample)_(.+)\.parquet$")
+_FLAT_POINT = re.compile(r"^point_(.+)\.parquet$")
+_FLAT_RULE = re.compile(r"^rule_result_(.+)\.parquet$")
+
+
+class _SnapshotGeneration(NamedTuple):
+    key: tuple
+    sample: Path
+    point: Path
+    rule: Path | None
+    manifest: Path | None
+    directory: Path | None
+
+    def files(self) -> list[Path]:
+        found = [self.sample, self.point]
+        if self.rule is not None and self.rule.is_file():
+            found.append(self.rule)
+        if self.manifest is not None and self.manifest.is_file():
+            found.append(self.manifest)
+        return found
+
+    def nbytes(self) -> int:
+        total = 0
+        for path in self.files():
+            if path.is_file():
+                total += path.stat().st_size
+        return total
+
+
+def _fsync_file(path: Path) -> None:
+    with open(path, "rb") as handle:
+        os.fsync(handle.fileno())
+
+
+def _fsync_dir(path: Path) -> None:
+    fd = os.open(path, os.O_RDONLY)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def _ntp_synced() -> bool:
+    flag = Path("/run/systemd/timesync/synchronized")
+    if flag.is_file():
+        return True
+    try:
+        out = subprocess.check_output(
+            ["timedatectl", "show", "-p", "NTPSynchronized", "--value"],
+            text=True,
+            timeout=2,
+            stderr=subprocess.DEVNULL,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return out.strip().lower() == "yes"
+
+
+def _parse_utc(text: str | None) -> datetime | None:
+    if not text:
+        return None
+    try:
+        return datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
 
 
 def _target_equipment(t: PointTarget | None, ref: str = "") -> str:
@@ -156,6 +227,8 @@ class HistoryStore:
         self.last_snapshot_utc: str | None = None
 
         self.snapshot_dir.mkdir(parents=True, exist_ok=True)
+        self._clock_sane = datetime.now(timezone.utc).year >= 2024 or _ntp_synced()
+        self._cleanup_tmp_locked()
         self.conn = duckdb.connect(":memory:")
         self.conn.execute("SET TimeZone = 'UTC'")
         self.conn.execute("SET memory_limit = '256MB'")
@@ -307,19 +380,132 @@ class HistoryStore:
             """
         )
 
+    def _cleanup_tmp_locked(self) -> None:
+        if not self.snapshot_dir.exists():
+            return
+        for path in list(self.snapshot_dir.iterdir()):
+            if path.is_dir() and (path.name.endswith(".tmp") or path.name.startswith(".")):
+                shutil.rmtree(path, ignore_errors=True)
+            elif path.is_file() and (path.name.endswith(".tmp") or path.name.startswith(".")):
+                path.unlink(missing_ok=True)
+
+    def _generations(self) -> list[_SnapshotGeneration]:
+        found: list[_SnapshotGeneration] = []
+        if not self.snapshot_dir.exists():
+            return found
+        for path in self.snapshot_dir.iterdir():
+            match = _GEN_DIR.fullmatch(path.name)
+            if not match or not path.is_dir():
+                continue
+            manifest = path / "manifest.json"
+            sample = path / "sample_store.parquet"
+            point = path / "point.parquet"
+            if not (manifest.is_file() and sample.is_file() and point.is_file()):
+                continue
+            rule = path / "rule_result.parquet"
+            found.append(
+                _SnapshotGeneration(
+                    key=(1, int(match.group(1))),
+                    sample=sample,
+                    point=point,
+                    rule=rule if rule.is_file() else None,
+                    manifest=manifest,
+                    directory=path,
+                )
+            )
+        samples: dict[str, Path] = {}
+        points: dict[str, Path] = {}
+        rules: dict[str, Path] = {}
+        for path in self.snapshot_dir.glob("*.parquet"):
+            if not path.is_file():
+                continue
+            sample_m = _FLAT_SAMPLE.fullmatch(path.name)
+            point_m = _FLAT_POINT.fullmatch(path.name)
+            rule_m = _FLAT_RULE.fullmatch(path.name)
+            if sample_m and sample_m.group(1) not in samples:
+                samples[sample_m.group(1)] = path
+            elif point_m:
+                points[point_m.group(1)] = path
+            elif rule_m:
+                rules[rule_m.group(1)] = path
+        for stamp in sorted(set(samples) & set(points)):
+            found.append(
+                _SnapshotGeneration(
+                    key=(0, stamp),
+                    sample=samples[stamp],
+                    point=points[stamp],
+                    rule=rules.get(stamp),
+                    manifest=None,
+                    directory=None,
+                )
+            )
+        found.sort(key=lambda item: item.key)
+        return found
+
+    def _delete_legacy_files(self) -> None:
+        for pattern in ("telemetry_*.parquet", "fdd_results_*.parquet"):
+            for path in self.snapshot_dir.glob(pattern):
+                if path.is_file():
+                    path.unlink(missing_ok=True)
+
+    def _remove_generation(self, gen: _SnapshotGeneration) -> None:
+        if gen.directory is not None:
+            resolved = gen.directory.resolve()
+            root = self.snapshot_dir.resolve()
+            if resolved.parent == root and _GEN_DIR.fullmatch(resolved.name):
+                shutil.rmtree(resolved, ignore_errors=True)
+                return
+        for path in gen.files():
+            if path.is_file():
+                path.unlink(missing_ok=True)
+
+    def _reseed_rule_result_seq(self) -> None:
+        row = self.conn.execute("SELECT MAX(result_id) FROM fdd.rule_result").fetchone()
+        if not row or row[0] is None:
+            return
+        self.conn.execute("SELECT setval('fdd.rule_result_id_seq', ?)", [int(row[0])])
+
+    def _manifest_written_utc(self, gen: _SnapshotGeneration) -> datetime | None:
+        if gen.manifest is None or not gen.manifest.is_file():
+            return None
+        try:
+            body = json.loads(gen.manifest.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return None
+        return _parse_utc(body.get("written_utc") if isinstance(body, dict) else None)
+
+    def _clock_allows_snapshot(self, now: datetime) -> bool:
+        gens = self._generations()
+        if gens:
+            written = self._manifest_written_utc(gens[-1])
+            if written is not None and now < written:
+                LOG.warning("skipping snapshot; clock %s is behind last generation %s", now.isoformat(), written.isoformat())
+                return False
+        if now.year < 2024 and not _ntp_synced():
+            LOG.warning("skipping snapshot; clock is not known to be synced")
+            return False
+        return True
+
     def _reload_last_snapshot_locked(self) -> None:
         if self._reload_core_snapshots():
             self._prune_memory_locked()
-            return
-        self._reload_legacy_snapshots()
-        self._prune_memory_locked()
+        else:
+            self._reload_legacy_snapshots()
+            self._prune_memory_locked()
+        self._reseed_rule_result_seq()
 
     def _reload_core_snapshots(self) -> bool:
-        sample_snaps = sorted(
-            list(self.snapshot_dir.glob("sample_store_*.parquet"))
-            + list(self.snapshot_dir.glob("input_sample_*.parquet")),
-            reverse=True,
-        )
+        generations = self._generations()
+        if not generations:
+            return False
+        for gen in reversed(generations):
+            if self._load_generation(gen):
+                self._delete_legacy_files()
+                return True
+        return False
+
+    def _load_generation(self, gen: _SnapshotGeneration) -> bool:
+        sample_snaps = [gen.sample]
         loaded = False
         for snap in sample_snaps:
             try:
@@ -363,7 +549,7 @@ class HistoryStore:
             except Exception as exc:
                 LOG.warning("Skipping unreadable snapshot %s: %s", snap.name, exc)
 
-        point_snaps = sorted(self.snapshot_dir.glob("point_*.parquet"), reverse=True)
+        point_snaps = [gen.point]
         for snap in point_snaps:
             try:
                 self.conn.execute(
@@ -395,7 +581,7 @@ class HistoryStore:
             except Exception as exc:
                 LOG.warning("Skipping unreadable point snapshot %s: %s", snap.name, exc)
 
-        result_snaps = sorted(self.snapshot_dir.glob("rule_result_*.parquet"), reverse=True)
+        result_snaps = [gen.rule] if gen.rule is not None else []
         for snap in result_snaps:
             try:
                 self.conn.execute(
@@ -685,18 +871,14 @@ class HistoryStore:
             return self.row_count_locked()
 
     def disk_bytes(self) -> int:
-        if not self.snapshot_dir.exists():
-            return 0
-        return sum(p.stat().st_size for p in self.snapshot_dir.glob("*.parquet") if p.is_file())
+        return sum(gen.nbytes() for gen in self._generations())
 
     def snapshot_count(self) -> int:
+        gens = self._generations()
+        if gens:
+            return len(gens)
         if not self.snapshot_dir.exists():
             return 0
-        modern = list(self.snapshot_dir.glob("sample_store_*.parquet")) + list(
-            self.snapshot_dir.glob("input_sample_*.parquet")
-        )
-        if modern:
-            return len(set(modern))
         return len(list(self.snapshot_dir.glob("telemetry_*.parquet")))
 
     def _prune_memory_locked(self) -> None:
@@ -764,7 +946,7 @@ class HistoryStore:
             "ts": s.timestamp_utc,
             "value": si_val,
             "value_text": v_txt if si_val is None else (None if v_txt is None else str(si_val)),
-            "status": s.status,
+            "status": "clock_unsynced" if not self._clock_sane and (not s.status or s.status == "ok") else s.status,
             "equipment_id": _target_equipment(None, ref),
             "unit": si_unit or normalize_si_unit(s.units or ""),
             "source_unit": s.units or "",
@@ -993,104 +1175,94 @@ class HistoryStore:
         return n
 
     def _enforce_disk_cap_locked(self) -> None:
-        groups = [
-            "sample_store_*.parquet",
-            "input_sample_*.parquet",
-            "point_*.parquet",
-            "rule_result_*.parquet",
-            "telemetry_*.parquet",
-            "fdd_results_*.parquet",
-        ]
-        for pattern in groups:
-            snaps = sorted(self.snapshot_dir.glob(pattern))
-            while len(snaps) > self.max_snapshots:
-                oldest = snaps.pop(0)
-                oldest.unlink(missing_ok=True)
+        """Drop oldest complete generations. Never delete the newest one.
 
-        while self.disk_bytes() > self.max_bytes:
-            # Drop oldest sample snapshot first, then companions of the same stamp if present.
-            candidates = sorted(
-                p
-                for p in self.snapshot_dir.glob("*.parquet")
-                if p.is_file() and not p.name.startswith(".")
-            )
-            if len(candidates) <= 1:
-                break
-            candidates[0].unlink(missing_ok=True)
+        Legacy telemetry and fdd_results files are not part of a generation.
+        They are removed once a modern generation exists and are not counted
+        toward the byte cap, so they cannot evict the snapshot just written.
+        """
+        if self._generations():
+            self._delete_legacy_files()
+        gens = self._generations()
+        while len(gens) > self.max_snapshots and len(gens) > 1:
+            self._remove_generation(gens.pop(0))
+        while len(gens) > 1 and sum(gen.nbytes() for gen in gens) > self.max_bytes:
+            self._remove_generation(gens.pop(0))
+
+    def _copy_parquet(self, select_sql: str, dest: Path) -> None:
+        self.conn.execute(
+            f"COPY ({select_sql}) TO '{_sql_quote(dest)}' (FORMAT PARQUET, COMPRESSION ZSTD)"
+        )
+        _fsync_file(dest)
 
     def write_snapshot(self, *, force: bool = False) -> Path | None:
-        """Write compact ZSTD Parquet snapshots (sample_store, point, rule_result)."""
+        """Write one fsynced generation (sample, point, optional rule, manifest last)."""
         with self._lock:
             self._flush_locked()
             self._prune_memory_locked()
             cnt = self.row_count_locked()
             if cnt == 0:
                 return None
-            existing = list(self.snapshot_dir.glob("sample_store_*.parquet")) or list(
-                self.snapshot_dir.glob("telemetry_*.parquet")
-            )
+            existing = self._generations() or list(self.snapshot_dir.glob("telemetry_*.parquet"))
             if not force and not self._dirty_since_snapshot and existing:
                 return None
+            now = datetime.now(timezone.utc)
+            if not self._clock_allows_snapshot(now):
+                return None
 
-            stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
-            final_s = self.snapshot_dir / f"sample_store_{stamp}.parquet"
-            tmp_s = self.snapshot_dir / f".sample_store_{stamp}.parquet.tmp"
-            self.conn.execute(
-                f"""
-                COPY (
-                    SELECT site_id, point_key, ts, value, value_text, status
-                    FROM fdd.sample_store
-                    ORDER BY ts ASC
-                ) TO '{_sql_quote(tmp_s)}' (FORMAT PARQUET, COMPRESSION ZSTD)
+            seq = 1
+            gens = self._generations()
+            if gens and isinstance(gens[-1].key[1], int) and gens[-1].key[0] == 1:
+                seq = int(gens[-1].key[1]) + 1
+            elif gens:
+                seq = max((int(item.key[1]) for item in gens if item.key[0] == 1), default=0) + 1
+            staging = self.snapshot_dir / f".gen_{seq:06d}.tmp"
+            if staging.exists():
+                shutil.rmtree(staging)
+            staging.mkdir()
+            final_s = staging / "sample_store.parquet"
+            self._copy_parquet(
                 """
+                SELECT site_id, point_key, ts, value, value_text, status
+                FROM fdd.sample_store
+                ORDER BY ts ASC
+                """,
+                final_s,
             )
-            os.replace(tmp_s, final_s)
-
-            tmp_p = self.snapshot_dir / f".point_{stamp}.parquet.tmp"
-            final_p = self.snapshot_dir / f"point_{stamp}.parquet"
-            self.conn.execute(
-                f"""
-                COPY (
-                    SELECT {", ".join(POINT_COLUMNS)} FROM fdd.point
-                ) TO '{_sql_quote(tmp_p)}' (FORMAT PARQUET, COMPRESSION ZSTD)
-                """
+            final_p = staging / "point.parquet"
+            self._copy_parquet(
+                f"SELECT {', '.join(POINT_COLUMNS)} FROM fdd.point",
+                final_p,
             )
-            os.replace(tmp_p, final_p)
-
+            files = ["sample_store.parquet", "point.parquet"]
             rcnt = int(self.conn.execute("SELECT COUNT(*) FROM fdd.rule_result").fetchone()[0])
             if rcnt > 0:
-                tmp_r = self.snapshot_dir / f".rule_result_{stamp}.parquet.tmp"
-                final_r = self.snapshot_dir / f"rule_result_{stamp}.parquet"
-                self.conn.execute(
+                final_r = staging / "rule_result.parquet"
+                self._copy_parquet(
                     f"""
-                    COPY (
-                        SELECT {", ".join(RULE_RESULT_COLUMNS)} FROM fdd.rule_result
-                        ORDER BY window_end ASC
-                    ) TO '{_sql_quote(tmp_r)}' (FORMAT PARQUET, COMPRESSION ZSTD)
-                    """
-                )
-                os.replace(tmp_r, final_r)
-
-            self._enforce_disk_cap_locked()
-            # If a single snapshot still exceeds the cap, trim oldest 25% and rewrite once.
-            if self.disk_bytes() > self.max_bytes and self.row_count_locked() > 0:
-                cur_cnt = self.row_count_locked()
-                trim = max(1, cur_cnt // 4)
-                self.conn.execute(
-                    """
-                    DELETE FROM fdd.sample_store
-                    WHERE (site_id, point_key, ts) IN (
-                        SELECT site_id, point_key, ts
-                        FROM fdd.sample_store
-                        ORDER BY ts ASC
-                        LIMIT ?
-                    )
+                    SELECT {", ".join(RULE_RESULT_COLUMNS)} FROM fdd.rule_result
+                    ORDER BY window_end ASC
                     """,
-                    [trim],
+                    final_r,
                 )
+                files.append("rule_result.parquet")
+            manifest = {
+                "seq": seq,
+                "files": files,
+                "written_utc": now.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z",
+            }
+            manifest_path = staging / "manifest.json"
+            manifest_path.write_text(json.dumps(manifest, separators=(",", ":")), encoding="utf-8")
+            _fsync_file(manifest_path)
+            _fsync_dir(staging)
+            final_dir = self.snapshot_dir / f"gen_{seq:06d}"
+            os.replace(staging, final_dir)
+            _fsync_dir(self.snapshot_dir)
+            self._enforce_disk_cap_locked()
             self._dirty_since_snapshot = False
             self.last_snapshot_utc = utc_now_iso()
-            return final_s
+            self._clock_sane = True
+            return final_dir / "sample_store.parquet"
 
     def export_bundle_zip(
         self,
