@@ -64,6 +64,28 @@ def _env_bool(name: str, default: bool = False) -> bool:
     return val.strip().lower() in {"1", "true", "yes", "on"}
 
 
+# Container path. Compose mounts ./var here and forwards EDGE_POINTS_FILE.
+DEFAULT_POINTS_FILE = Path("/app/examples/edge-microdot/var/points.csv")
+
+
+def points_file_from_env() -> Path:
+    raw = os.environ.get("EDGE_POINTS_FILE", "").strip()
+    return Path(raw) if raw else DEFAULT_POINTS_FILE
+
+
+def resolve_points_path(cli_path: Path | None) -> Path | None:
+    """``--points`` wins. Otherwise load EDGE_POINTS_FILE when that file exists.
+
+    A missing fallback is not an error. The caller logs that no points are configured.
+    """
+    if cli_path is not None:
+        return cli_path
+    candidate = points_file_from_env()
+    if candidate.is_file():
+        return candidate
+    return None
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="edge-microdot", description="Edge BACnet / Niagara ingest (Microdot)")
     p.add_argument("--driver", choices=["bacnet", "niagara", "fake", "modbus"], default=None)
@@ -143,7 +165,8 @@ def build_runtime(argv: Sequence[str] | None = None) -> tuple:
     args = build_parser().parse_args(argv)
     site = args.site or os.environ.get("EDGE_SITE", "demo-site")
     driver = _resolve_driver(args)
-    cfg = load_config(args.points, site=site) if args.points else None
+    points_path = resolve_points_path(args.points)
+    cfg = load_config(points_path, site=site) if points_path else None
     if cfg is None:
         from edge_microdot.config import LoadedConfig
 
@@ -152,6 +175,15 @@ def build_runtime(argv: Sequence[str] | None = None) -> tuple:
     targets = cfg.targets
     if driver == "fake" and not targets:
         targets = _build_targets_fake(args.fake_points, site)
+    if not targets:
+        candidate = args.points if args.points is not None else points_file_from_env()
+        logging.getLogger("edge_microdot").warning(
+            "no points are configured (%s). "
+            "Pass --points or set EDGE_POINTS_FILE. "
+            "CSV columns: device,object,property,units,label "
+            "(object is type,instance, quoted because it contains a comma).",
+            candidate,
+        )
 
     source_kind = driver
     if driver == "fake":
@@ -161,7 +193,8 @@ def build_runtime(argv: Sequence[str] | None = None) -> tuple:
         instances = _device_instances(args)
         if not targets and not instances:
             raise SystemExit(
-                "bacnet driver requires --points or EDGE_BACNET_DEVICES / --devices "
+                "bacnet driver requires a points file (--points or EDGE_POINTS_FILE) "
+                "or EDGE_BACNET_DEVICES / --devices "
                 "(comma-separated device instances to discover via Who-Is)"
             )
         # BACpypes3 Application is loop-bound to the Microdot serve() loop.
@@ -176,9 +209,11 @@ def build_runtime(argv: Sequence[str] | None = None) -> tuple:
             whois_timeout_s=args.whois_timeout,
         )
     elif driver == "modbus":
-        if not args.points:
-            raise SystemExit("modbus driver requires --points (a YAML file with a modbus: list)")
-        modbus_points = load_modbus_points(args.points, site=site)
+        if points_path is None:
+            raise SystemExit(
+                "modbus driver requires --points or EDGE_POINTS_FILE (a YAML file with a modbus: list)"
+            )
+        modbus_points = load_modbus_points(points_path, site=site)
         if not modbus_points:
             raise SystemExit(f"no modbus points in {args.points}")
         source = ModbusTcpSource(modbus_points)
