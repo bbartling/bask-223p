@@ -440,55 +440,122 @@ class HistoryStore:
         return loaded
 
     def _reload_legacy_snapshots(self) -> None:
-        """Map pre-parity telemetry_ / fdd_results_ snapshots into the core schema."""
+        """Map pre-parity telemetry_ / fdd_results_ snapshots into the core schema.
+
+        Uses set-based INSERT...SELECT so a large rolling window (100k+ rows)
+        cannot stall HTTP startup the way a per-row Python loop would.
+        """
         snaps = sorted(self.snapshot_dir.glob("telemetry_*.parquet"), reverse=True)
         for snap in snaps:
             try:
-                rows = self.conn.execute(
+                n = int(self.conn.execute("SELECT COUNT(*) FROM read_parquet(?)", [str(snap)]).fetchone()[0])
+                LOG.info("Reloading legacy Parquet snapshot %s (%d rows) in bulk", snap.name, n)
+                self.conn.execute("DROP TABLE IF EXISTS _legacy_tel")
+                self.conn.execute(
                     """
+                    CREATE TEMP TABLE _legacy_tel AS
                     SELECT
-                        CAST(ref AS VARCHAR),
-                        CAST(timestamp_utc AS TIMESTAMPTZ),
-                        CAST(site AS VARCHAR),
-                        CAST(source AS VARCHAR),
-                        CAST(device AS VARCHAR),
-                        CAST(object AS VARCHAR),
-                        CAST(property AS VARCHAR),
-                        CAST(value_num AS DOUBLE),
-                        CAST(value_text AS VARCHAR),
-                        CAST(units AS VARCHAR),
-                        CAST(status AS VARCHAR)
+                        CAST(ref AS VARCHAR) AS ref,
+                        CAST(timestamp_utc AS TIMESTAMPTZ) AS timestamp_utc,
+                        CAST(site AS VARCHAR) AS site,
+                        CAST(source AS VARCHAR) AS source,
+                        CAST(device AS VARCHAR) AS device,
+                        CAST(object AS VARCHAR) AS object,
+                        CAST(property AS VARCHAR) AS property,
+                        CAST(value_num AS DOUBLE) AS value_num,
+                        CAST(value_text AS VARCHAR) AS value_text,
+                        CAST(units AS VARCHAR) AS units,
+                        CAST(status AS VARCHAR) AS status,
+                        lower(replace(replace(replace(coalesce(CAST(units AS VARCHAR), ''),
+                              chr(176), ''), ' ', ''), '_', '')) AS unit_key
                     FROM read_parquet(?)
                     """,
                     [str(snap)],
-                ).fetchall()
-                for rec in rows:
-                    ref, ts, site, source, device, obj, prop, value_num, value_text, units, status = rec
-                    si_val, si_unit = to_si(value_num, units or "")
-                    self._upsert_point_row(
-                        site_id=site or "",
-                        point_key=ref,
-                        equipment_id=_target_equipment(None, ref),
-                        role="",
-                        unit=si_unit or normalize_si_unit(units or ""),
-                        source_unit=units or "",
-                        attrs={
-                            "source": source or "",
-                            "device": device or "",
-                            "object": obj or "",
-                            "property": prop or "present-value",
-                            "legacy_snapshot": True,
-                        },
+                )
+                self.conn.execute(
+                    """
+                    CREATE OR REPLACE TEMP VIEW _legacy_si AS
+                    SELECT
+                        coalesce(site, '') AS site_id,
+                        ref AS point_key,
+                        timestamp_utc AS ts,
+                        value_text,
+                        status,
+                        source, device, object, property, units,
+                        CASE
+                            WHEN unit_key IN ('f', 'degf', 'degreef', 'fahrenheit')
+                                THEN (value_num - 32.0) * 5.0 / 9.0
+                            WHEN unit_key IN ('inh2o', 'inwc') THEN value_num * 249.08891
+                            WHEN unit_key = 'psi' THEN value_num * 6894.757293
+                            WHEN unit_key = 'kpa' THEN value_num * 1000.0
+                            WHEN unit_key IN ('cfm', 'ft3/min', 'ft3-per-min')
+                                THEN value_num * 0.00047194745
+                            WHEN unit_key = 'gpm' THEN value_num * 6.30901964e-5
+                            WHEN unit_key = 'kw' THEN value_num * 1000.0
+                            WHEN unit_key = 'kwh' THEN value_num * 3600000.0
+                            ELSE value_num
+                        END AS value,
+                        CASE
+                            WHEN unit_key IN ('f', 'degf', 'degreef', 'fahrenheit',
+                                              'c', 'cel', 'degc', 'degreec', 'degreecelsius')
+                                THEN 'degC'
+                            WHEN unit_key IN ('k', 'degk') THEN 'K'
+                            WHEN unit_key IN ('inh2o', 'inwc', 'psi', 'kpa', 'pa') THEN 'Pa'
+                            WHEN unit_key IN ('cfm', 'ft3/min', 'ft3-per-min', 'gpm',
+                                              'm3/s', 'm3-per-sec') THEN 'm3/s'
+                            WHEN unit_key IN ('kw', 'w') THEN 'W'
+                            WHEN unit_key = 'kwh' THEN 'J'
+                            WHEN unit_key = 'hz' THEN 'Hz'
+                            WHEN unit_key IN ('%', 'percent') THEN '%'
+                            WHEN unit_key IN ('%rh', 'percentrh') THEN '%RH'
+                            WHEN unit_key = 'ppm' THEN 'ppm'
+                            ELSE units
+                        END AS si_unit
+                    FROM _legacy_tel
+                    """
+                )
+                self.conn.execute(
+                    """
+                    INSERT INTO fdd.point (
+                        site_id, point_key, equipment_id, role, unit, source_unit, attrs, updated_at
                     )
-                    self.conn.execute(
-                        """
-                        INSERT INTO fdd.sample_store
-                            (site_id, point_key, ts, value, value_text, status)
-                        VALUES (?, ?, ?, ?, ?, ?)
-                        ON CONFLICT (site_id, point_key, ts) DO NOTHING
-                        """,
-                        [site or "", ref, ts, si_val, value_text, status],
-                    )
+                    SELECT
+                        site_id,
+                        point_key,
+                        CASE
+                            WHEN coalesce(device, '') <> '' THEN 'device-' || device
+                            WHEN point_key LIKE 'bacnet://%' THEN
+                                'device-' || split_part(substr(point_key, 10), '/', 1)
+                            WHEN point_key LIKE 'niagara://%' THEN 'niagara'
+                            ELSE 'edge'
+                        END,
+                        '',
+                        any_value(si_unit),
+                        any_value(units),
+                        json_object(
+                            'source', coalesce(any_value(source), ''),
+                            'device', coalesce(any_value(device), ''),
+                            'object', coalesce(any_value(object), ''),
+                            'property', coalesce(any_value(property), 'present-value'),
+                            'legacy_snapshot', true
+                        ),
+                        now()
+                    FROM _legacy_si
+                    GROUP BY site_id, point_key, device
+                    ON CONFLICT (site_id, point_key) DO NOTHING
+                    """
+                )
+                self.conn.execute(
+                    """
+                    INSERT INTO fdd.sample_store
+                        (site_id, point_key, ts, value, value_text, status)
+                    SELECT site_id, point_key, ts, value, value_text, status
+                    FROM _legacy_si
+                    ON CONFLICT (site_id, point_key, ts) DO NOTHING
+                    """
+                )
+                self.conn.execute("DROP VIEW IF EXISTS _legacy_si")
+                self.conn.execute("DROP TABLE IF EXISTS _legacy_tel")
                 mtime = datetime.fromtimestamp(snap.stat().st_mtime, tz=timezone.utc)
                 self.last_snapshot_utc = mtime.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
                 LOG.info("Reloaded legacy Parquet snapshot %s (%d rows)", snap.name, self.row_count_locked())
@@ -499,39 +566,31 @@ class HistoryStore:
         fdd_snaps = sorted(self.snapshot_dir.glob("fdd_results_*.parquet"), reverse=True)
         for fsnap in fdd_snaps:
             try:
-                rows = self.conn.execute(
+                self.conn.execute(
                     """
-                    SELECT CAST(ts AS TIMESTAMPTZ), CAST(equipment AS VARCHAR),
-                           CAST(rule AS VARCHAR), CAST(fault_flag AS BOOLEAN),
-                           CAST(detail AS VARCHAR)
+                    INSERT INTO fdd.rule_result (
+                        site_id, equipment_id, rule_id, subject_key,
+                        window_start, window_end, status, reason,
+                        fault_hours, covered_hours, engine
+                    )
+                    SELECT
+                        '',
+                        coalesce(CAST(equipment AS VARCHAR), 'edge'),
+                        coalesce(CAST(rule AS VARCHAR), 'UNKNOWN'),
+                        '',
+                        CAST(ts AS TIMESTAMPTZ) - INTERVAL 1 HOUR,
+                        CAST(ts AS TIMESTAMPTZ),
+                        CASE WHEN CAST(fault_flag AS BOOLEAN) THEN 'FAULT' ELSE 'PASS' END,
+                        CAST(detail AS VARCHAR),
+                        CASE WHEN CAST(fault_flag AS BOOLEAN) THEN 1.0 ELSE 0.0 END,
+                        1.0,
+                        'duckdb'
                     FROM read_parquet(?)
+                    WHERE CAST(ts AS TIMESTAMPTZ) IS NOT NULL
+                    ON CONFLICT DO NOTHING
                     """,
                     [str(fsnap)],
-                ).fetchall()
-                adapted = []
-                for ts, equipment, rule, flag, detail in rows:
-                    end = ts
-                    start = datetime.fromtimestamp(end.timestamp() - 3600, tz=timezone.utc) if hasattr(end, "timestamp") else None
-                    if start is None:
-                        continue
-                    adapted.append(
-                        {
-                            "site_id": "",
-                            "equipment_id": equipment or "edge",
-                            "rule_id": str(rule or "UNKNOWN"),
-                            "subject_key": "",
-                            "window_start": start.isoformat(),
-                            "window_end": end.isoformat() if hasattr(end, "isoformat") else str(end),
-                            "status": "FAULT" if flag else "PASS",
-                            "reason": detail or "",
-                            "fault_hours": 1.0 if flag else 0.0,
-                            "covered_hours": 1.0,
-                            "role": None,
-                            "engine": "duckdb",
-                        }
-                    )
-                if adapted:
-                    self._upsert_rule_results_locked(adapted)
+                )
                 break
             except Exception as exc:
                 LOG.warning("Skipping unreadable legacy FDD snapshot %s: %s", fsnap.name, exc)

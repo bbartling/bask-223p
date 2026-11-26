@@ -261,3 +261,46 @@ def test_bundle_and_sql_routes_auth(tmp_path, monkeypatch):
 
     asyncio.run(_run())
     history.close()
+
+
+def test_legacy_telemetry_snapshot_bulk_reload(tmp_path):
+    """Pre-parity telemetry_*.parquet files must reload in bulk (not row-by-row)."""
+    import time
+
+    snap_dir = tmp_path / "snapshots"
+    snap_dir.mkdir()
+    con = duckdb.connect(":memory:")
+    con.execute("SET TimeZone = 'UTC'")
+    con.execute(
+        """
+        CREATE TABLE t AS
+        SELECT
+            'bacnet://10001/analog-input,' || CAST(i % 20 AS VARCHAR) AS ref,
+            CURRENT_TIMESTAMP - ((4000 - i) * INTERVAL 15 SECOND) AS timestamp_utc,
+            'demo' AS site,
+            'fake' AS source,
+            '10001' AS device,
+            'analog-input,' || CAST(i % 20 AS VARCHAR) AS object,
+            'present-value' AS property,
+            68.0 + (i % 5) AS value_num,
+            CAST(68.0 + (i % 5) AS VARCHAR) AS value_text,
+            '°F' AS units,
+            'ok' AS status
+        FROM range(4000) t(i)
+        """
+    )
+    out = snap_dir / "telemetry_20240101T000000Z.parquet"
+    con.execute(f"COPY t TO '{out}' (FORMAT PARQUET, COMPRESSION ZSTD)")
+    con.close()
+
+    t0 = time.perf_counter()
+    store = HistoryStore(snap_dir, max_bytes=5 * 1024 * 1024)
+    elapsed = time.perf_counter() - t0
+    assert store.row_count() == 4000
+    rows = store.query_history(limit=5)
+    assert rows
+    # 68 F -> ~20 C
+    assert rows[0]["units"] == "degC"
+    assert rows[0]["value_num"] == pytest.approx(20.0, abs=0.1)
+    assert elapsed < 8.0, f"legacy reload too slow ({elapsed:.2f}s); still row-by-row?"
+    store.close()
