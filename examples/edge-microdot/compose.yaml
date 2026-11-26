@@ -54,8 +54,11 @@ services:
       context: ../..
       dockerfile: examples/edge-microdot/Dockerfile
     restart: unless-stopped
+    # Caddy runs on the host network and reaches Microdot through this loopback-only
+    # published port. Microdot listens on 0.0.0.0 inside the container so the
+    # published port can reach it; it is not exposed on the LAN.
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     tmpfs:
       - /tmp:size=32m,mode=1777
     logging:
@@ -96,7 +99,7 @@ services:
       - "--base"
       - "${BASK_BASE_ORD:-slot:/Drivers}"
       - "--host"
-      - "127.0.0.1"
+      - "0.0.0.0"
       - "--port"
       - "8080"
 
@@ -104,6 +107,8 @@ services:
     image: caddy:2
     network_mode: host
     restart: unless-stopped
+    environment:
+      EDGE_TLS_HOST: "${EDGE_TLS_HOST:-:443}"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
