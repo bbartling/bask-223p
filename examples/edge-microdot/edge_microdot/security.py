@@ -138,8 +138,8 @@ class AuthBundle:
 def load_auth_from_env() -> AuthBundle:
     disabled = os.environ.get("EDGE_AUTH_DISABLED", "").strip().lower() in {"1", "true", "yes"}
     secret = os.environ.get("EDGE_SECRET_KEY", "").strip()
-    if not secret and not disabled:
-        secret = os.urandom(32).hex()
+    if not secret:
+        raise RuntimeError("EDGE_SECRET_KEY is unset; refusing to start")
     access_ttl = int(os.environ.get("EDGE_TOKEN_TTL", "3600"))
     session_ttl = int(os.environ.get("EDGE_SESSION_TTL", str(access_ttl)))
     users = UserDirectory(os.environ.get("EDGE_USERS"))

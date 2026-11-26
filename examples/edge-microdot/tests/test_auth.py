@@ -136,3 +136,22 @@ def test_login_logout_flow(auth_app):
         assert out.status_code == 302
 
     asyncio.run(_run())
+
+
+def test_startup_fails_when_secret_key_unset(monkeypatch):
+    monkeypatch.delenv("EDGE_SECRET_KEY", raising=False)
+    with pytest.raises(RuntimeError, match="EDGE_SECRET_KEY"):
+        load_auth_from_env()
+
+
+def test_startup_fails_when_secret_key_blank(monkeypatch):
+    monkeypatch.setenv("EDGE_SECRET_KEY", "   ")
+    with pytest.raises(RuntimeError, match="EDGE_SECRET_KEY"):
+        load_auth_from_env()
+
+
+def test_startup_fails_when_secret_unset_even_if_auth_disabled(monkeypatch):
+    monkeypatch.delenv("EDGE_SECRET_KEY", raising=False)
+    monkeypatch.setenv("EDGE_AUTH_DISABLED", "1")
+    with pytest.raises(RuntimeError, match="EDGE_SECRET_KEY"):
+        load_auth_from_env()

@@ -7,6 +7,7 @@ import logging
 import os
 from pathlib import Path
 from typing import Any, Sequence
+from urllib.parse import unquote
 
 from microdot import Microdot, Response, send_file
 from microdot.session import with_session
@@ -25,6 +26,42 @@ LOG = logging.getLogger(__name__)
 
 DEFAULT_DUCKDB_WASM_URL = "/static/vendor/duckdb/duckdb-browser.mjs"
 DEFAULT_DUCKDB_WASM_BUNDLE_BASE = "/static/vendor/duckdb"
+
+def resolve_static_file(static_dir: Path, raw_path: str) -> Path | None:
+    """Return a regular file inside ``static_dir``, or None.
+
+    Rejects absolute paths, ``..``, empty and dot segments, backslashes,
+    double slashes, and null bytes, including percent-encoded forms. The
+    resolved path must stay inside ``static_dir`` after following symlinks,
+    so a symlink that points outside the tree is not served.
+    """
+    if not isinstance(raw_path, str) or raw_path == "":
+        return None
+    decoded = raw_path
+    for _ in range(8):
+        nxt = unquote(decoded)
+        if nxt == decoded:
+            break
+        decoded = nxt
+    else:
+        return None
+    if _static_path_unsafe(raw_path) or _static_path_unsafe(decoded):
+        return None
+    root = static_dir.resolve()
+    try:
+        resolved = (root / decoded).resolve(strict=True)
+    except (OSError, RuntimeError, ValueError):
+        return None
+    if not resolved.is_relative_to(root) or resolved == root or not resolved.is_file():
+        return None
+    return resolved
+
+
+def _static_path_unsafe(path: str) -> bool:
+    if not path or path[0] in "/\\" or "\\" in path or "//" in path or "\x00" in path:
+        return True
+    return any(part in {"", ".", ".."} for part in path.split("/"))
+
 
 DEFAULT_SPARQL = """PREFIX s223: <http://data.ashrae.org/standard223#>
 PREFIX ref: <https://brickschema.org/schema/Brick/ref#>
@@ -187,7 +224,10 @@ def create_app(
 
     @app.route("/static/<path:path>")
     async def static_files(request, path):
-        return send_file(str(static_dir / path))
+        target = resolve_static_file(static_dir, path)
+        if target is None:
+            return Response(status_code=404)
+        return send_file(str(target))
 
     @app.get("/health")
     async def health(request):
