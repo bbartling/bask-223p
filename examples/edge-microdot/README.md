@@ -203,3 +203,5 @@ History stays in `:memory:` DuckDB. The card sees an atomic ZSTD Parquet snapsho
 Compose turns `EDGE_SD_CARD=1` on for both Pi services. `EDGE_DURABLE_MINUTES` (default **15**) is how often a snapshot is written and how often the log file is drained. The in-memory sync (`EDGE_FLUSH_INTERVAL`, default 30 seconds) does not touch the card. Oldest snapshots rotate under `EDGE_DB_MAX_MB`.
 
 `/tmp` is a 32 MB tmpfs and Docker's json log is capped at 512 KB, with `EDGE_LOG_LEVEL=WARNING`. Shutdown still writes one snapshot and drains the log buffer. Set `EDGE_SNAPSHOT_INTERVAL` in seconds when you want a different cadence than the durable minutes.
+
+**`var/` ownership.** The image runs as uid 1000 (`edge`), not root. Compose runs a one-shot `var-init` service before either edge service; it `chown`s `./var` to 1000:1000, so a `var/` created by an older root-run image or by Docker itself is fixed automatically on `docker compose up`. Without Compose, run `sudo chown -R 1000:1000 var` once. Caddy gets only `EDGE_TLS_HOST` and `EDGE_TLS_BIND`, not the whole `.env`.

@@ -69,7 +69,10 @@ def test_services_are_read_only_non_root_and_bounded():
         assert "no-new-privileges:true" in svc["security_opt"]
         assert svc["mem_limit"] == "512m"
         assert svc["stop_grace_period"] == "30s"
-        assert svc["env_file"] == [{"path": ".env", "required": False}]
+        if name == "caddy":
+            assert "env_file" not in svc
+        else:
+            assert svc["env_file"] == [{"path": ".env", "required": False}]
     assert services["caddy"]["cap_add"] == ["NET_BIND_SERVICE"]
     example = (ROOT / ".env.example").read_text(encoding="utf-8")
     assert "NIAGARA_INSECURE=0" in example
@@ -96,3 +99,25 @@ def test_compose_passes_readme_variables():
         present.update(svc.get("environment") or {})
     missing = sorted(names - present)
     assert missing == []
+
+
+def test_caddy_gets_only_its_own_variables():
+    svc = _compose()["services"]["caddy"]
+    assert "env_file" not in svc
+    assert set(svc["environment"]) == {"EDGE_TLS_HOST", "EDGE_TLS_BIND"}
+
+
+def test_var_init_hands_var_to_the_edge_user_before_edge_starts():
+    services = _compose()["services"]
+    init = services["var-init"]
+    assert init["user"] == "0"
+    assert init["entrypoint"] == ["chown", "-R", "1000:1000", "/var-data"]
+    assert init["cap_drop"] == ["ALL"]
+    assert "CHOWN" in init["cap_add"]
+    assert init["volumes"] == ["./var:/var-data"]
+    assert init["restart"] == "no"
+    for name in ("edge-bacnet", "edge-niagara"):
+        dep = services[name]["depends_on"]["var-init"]
+        assert dep == {"condition": "service_completed_successfully"}
+    dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
+    assert "--uid 1000" in dockerfile
