@@ -22,7 +22,7 @@ dependencies = [
 
 [project.optional-dependencies]
 sparql = ["pyoxigraph==0.5.13"]
-dev = ["pytest==9.2.0", "pytest-asyncio==1.5.0", "httpx==0.28.1"]
+dev = ["pytest==9.2.0", "pytest-asyncio==1.5.0", "httpx==0.29.0"]
 
 [project.scripts]
 edge-microdot = "edge_microdot.cli:main"
