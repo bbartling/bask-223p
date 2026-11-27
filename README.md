@@ -5,7 +5,7 @@ Edge software for HVAC networks. ASHRAE 223P is the model. Haystack tags are an 
 - **BACnet/IP** through BACpypes3 (read, read-multiple, priority array, scan). Writes are off unless `EDGE_BACNET_WRITES_ENABLED` is set and the caller is an admin.
 - **Niagara** through [baskStream](https://github.com/rbhans/bask-stream), an authenticated WebSocket client that is read-only.
 
-Neither driver maps or polls every point on a live system. History is server-side DuckDB, with Parquet snapshots on disk. There is no DuckDB-WASM build. `reconcile` joins the two 223P graphs.
+Neither driver maps or polls every point on a live system. History is server-side DuckDB, with Parquet snapshots on disk. There is no DuckDB-WASM build. On the bench, reconcile runs in the central collector after each Pi has built its own 223P graph.
 
 ![01 | Two-Pi test bench](docs/architecture/test-bench.png)
 
@@ -13,7 +13,7 @@ The FEC is MS/TP. A BASrouter speaks BACnet/IP to Worker Pi 1 and to the Niagara
 
 ![02 | Campus-scale edge architecture](docs/architecture/campus.png)
 
-Each edge sends its model to the central collector, which feeds an analytics platform.
+The collector pulls each edge's `GET /api/export.zip` and can feed an analytics platform. It does not open a socket to the controllers.
 
 ![03 | Central collector](docs/architecture/central.png)
 
@@ -35,7 +35,7 @@ python -m bask_223p --help
 
 The library lives in `src/bask_223p`. Imports stay `bask_223p`.
 
-The bench is two Raspberry Pis running `examples/edge-microdot`, one profile each. Copy `.env.example` to `.env`, set the bind address or the station credentials, and put only the points you need in `var/points.csv`.
+The bench is two Raspberry Pi 3 Model B boards running `examples/edge-microdot`, one profile each. Pi 1 speaks BACnet/IP to a BASrouter; the FEC behind that router is MS/TP. Pi 2 reads the Niagara 4 station over baskStream. Copy `.env.example` to `.env`, set the bind address or the station credentials, and put only the points you need in `var/points.csv`.
 
 ```bash
 cd examples/edge-microdot
@@ -49,10 +49,10 @@ Details, including which routes are actually served on each Pi: [examples/edge-m
 
 | Driver | Where it runs | What it does |
 | --- | --- | --- |
-| BACpypes3 | Worker Pi 1, `examples/edge-microdot` profile `bacnet` | Who-Is, object catalog, ReadProperty, ReadPropertyMultiple, priority array. Polls the points file. |
+| BACpypes3 | Worker Pi 1, `examples/edge-microdot` profile `bacnet` | BACnet/IP only. On the bench the FEC is MS/TP behind a BASrouter. Who-Is, object catalog, ReadProperty, ReadPropertyMultiple, priority array. Polls the points file. |
 | baskStream | Worker Pi 2, profile `niagara` | Authenticated WebSocket, read-only. Polls the points file. Does not browse the station into the poll set. |
 
-`python -m bask_223p export-223p` writes the 223P Turtle from a baskStream snapshot or a BACnet points file. `python -m bask_223p reconcile` compares the two TTLs. Command reference: [docs/cli.md](docs/cli.md). Station install: [docs/station-setup.md](docs/station-setup.md).
+`python -m bask_223p export-223p` writes the 223P Turtle from a baskStream snapshot or a BACnet points file. `python -m bask_223p reconcile` compares two Turtle files locally. The bench collector is the process that reconciles the two edges. Command reference: [docs/cli.md](docs/cli.md). Station install: [docs/station-setup.md](docs/station-setup.md).
 
 `examples/live-ingest` is the same two drivers behind a FastAPI service for a laptop or VM, with SPARQL and a DuckDB SQL API. It is not the Pi image.
 
