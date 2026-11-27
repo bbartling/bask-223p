@@ -1,14 +1,13 @@
 flowchart TB
-  subgraph field [FIELD / BAS NETWORK]
-    FEC["JCI FEC\nBACnet/IP UDP 47808"]
-    STA["Niagara station\nbaskStream, HTTPS URL"]
-  end
-  subgraph edge [EDGE WORKERS]
-    PI1["Worker Pi 1\nBACpypes3\nWho-Is / I-Am, ReadProperty,\nReadPropertyMultiple, priority array\nwrites off"]
-    PI2["Worker Pi 2\nbaskStream WSS, read-only\npoints file only"]
-  end
-  FEC -->|BACnet read| PI1
-  STA -->|read-only WebSocket| PI2
-  PI1 -. 223P Turtle .-> M
-  PI2 -. 223P Turtle .-> M
-  M["ASHRAE 223P\nbacnet:// refs, QUDT local names\nHaystack overlay only\nreconcile compares the files"]
+  FEC["JCI FEC\nBACnet MS/TP, RS-485"]
+  RTR["BASrouter\nMS/TP to BACnet/IP"]
+  STA["Niagara 4 station\nWindows PC"]
+  PI1["Worker Pi 1\nBACpypes3\n223P Turtle on the Pi"]
+  PI2["Worker Pi 2\nbaskStream client\n223P Turtle on the Pi"]
+  COL["Central collector :8780\nnamed graph per edge\nreconcile\nno BAS access"]
+  FEC -->|MS/TP RS-485| RTR
+  RTR -->|BACnet/IP| PI1
+  RTR -->|BACnet/IP| STA
+  STA -->|baskStream WebSocket, read-only| PI2
+  PI1 -.->|HTTPS GET /api/export.zip| COL
+  PI2 -.->|HTTPS GET /api/export.zip| COL
