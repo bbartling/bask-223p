@@ -246,9 +246,24 @@ def test_bundle_and_sql_routes_auth(tmp_path, monkeypatch):
 
         rules_resp = await client.get("/api/sql-rules", headers=bearer)
         assert rules_resp.status_code == 200
-        assert rules_resp.json["duckdb_wasm_url"] == "/static/vendor/duckdb/duckdb-browser.mjs"
-        assert rules_resp.json["duckdb_wasm_bundle_base"] == "/static/vendor/duckdb"
+        assert rules_resp.json["engine"] == "duckdb"
+        assert "duckdb_wasm_url" not in rules_resp.json
         assert any(r["filename"] == "sv_stale.sql" for r in rules_resp.json["rules"])
+
+        denied = await client.post(
+            "/api/sql",
+            headers={**bearer, "Content-Type": "application/json"},
+            body='{"sql": "DROP TABLE fdd.point"}',
+        )
+        assert denied.status_code == 400
+        ok = await client.post(
+            "/api/sql",
+            headers={**bearer, "Content-Type": "application/json"},
+            body='{"sql": "SELECT COUNT(*) AS n FROM fdd.point"}',
+        )
+        assert ok.status_code == 200
+        assert ok.json["columns"] == ["n"]
+        assert ok.json["rows"][0][0] >= 1
 
         login = await client.post(
             "/login",
@@ -258,7 +273,8 @@ def test_bundle_and_sql_routes_auth(tmp_path, monkeypatch):
         assert login.status_code == 302
         sql_page = await client.get("/sql")
         assert sql_page.status_code == 200
-        assert b"DuckDB-WASM" in sql_page.body
+        assert b"Server DuckDB" in sql_page.body
+        assert b"/static/sql.js" in sql_page.body
 
     asyncio.run(_run())
     history.close()

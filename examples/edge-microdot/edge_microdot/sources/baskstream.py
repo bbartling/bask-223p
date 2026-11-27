@@ -1,6 +1,7 @@
 """Read-only baskStream polling source for edge ingest."""
 from __future__ import annotations
 
+import logging
 import os
 import threading
 import time
@@ -17,6 +18,8 @@ from bask_223p.bacnet.baskstream import (
 from bask_223p.bacnet.refs import normalize_object_type
 
 from edge_microdot.models import PointSample, PointTarget, make_point_ref, utc_now_iso
+
+LOG = logging.getLogger("edge.baskstream")
 
 
 def _ts_from_ms(ms: Any) -> str:
@@ -68,6 +71,7 @@ class BaskStreamSource:
         self.timeout = timeout
         self.read_batch_size = max(1, int(read_batch_size))
         self.client_factory = client_factory
+        self._warned_unmapped = False
         self._ord_to_target: dict[str, PointTarget] = {}
         self._reindex_targets()
 
@@ -152,22 +156,25 @@ class BaskStreamSource:
                         ref=ref,
                     )
                 )
-        self.targets = discovered
-        self._reindex_targets()
         return discovered
 
     def _ensure_targets(self, client: ReadOnlyBaskStreamClient) -> list[PointTarget]:
-        if self.targets and all(t.ord_path for t in self.targets):
-            return self.targets
+        del client
         if not self.targets:
-            return self.discover_targets()
-        if any(not t.ord_path for t in self.targets):
-            discovered = self.discover_targets()
-            by_key = {(t.device, t.object_id): t.ord_path for t in discovered}
-            for t in self.targets:
-                if not t.ord_path and (t.device, t.object_id) in by_key:
-                    t.ord_path = by_key[(t.device, t.object_id)]
-            self._reindex_targets()
+            if not self._warned_unmapped:
+                LOG.warning(
+                    "no Niagara points are configured. Pass --points or EDGE_POINTS_FILE. "
+                    "The poll loop does not browse the station."
+                )
+                self._warned_unmapped = True
+            return []
+        if all(t.ord_path for t in self.targets):
+            return self.targets
+        by_key = {(t.device, t.object_id): t.ord_path for t in self.discover_targets()}
+        for target in self.targets:
+            if not target.ord_path and (target.device, target.object_id) in by_key:
+                target.ord_path = by_key[(target.device, target.object_id)]
+        self._reindex_targets()
         return self.targets
 
     def _entries_to_samples(

@@ -84,7 +84,7 @@ def test_static_serves_packaged_file(edge_app):
         "/static/%252e%252e/%252e%252e/%252e%252e/etc/hostname",
         "/static/%2fetc%2fhostname",
         "/static/%2f%2fetc%2fhostname",
-        "/static/vendor/duckdb/../../../../../../etc/hostname",
+        "/static/sql.js/../../../../../../etc/hostname",
         "/static/index.html/../../../etc/hostname",
         "/static/./../../etc/hostname",
         "/static//proc/self/environ",

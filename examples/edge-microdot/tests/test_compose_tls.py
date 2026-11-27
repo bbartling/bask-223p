@@ -25,7 +25,8 @@ def test_caddyfile_asks_before_on_demand_and_sets_csp():
     assert "{$EDGE_TLS_HOST::443}" in text
     assert "bind {$EDGE_TLS_BIND:0.0.0.0}" in text
     assert "Content-Security-Policy" in text
-    assert "script-src 'self' 'wasm-unsafe-eval'" in text
+    assert "script-src 'self'" in text
+    assert "wasm-unsafe-eval" not in text
     assert "reverse_proxy 127.0.0.1:8080" in text
 
 

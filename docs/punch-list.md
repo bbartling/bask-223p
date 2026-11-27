@@ -10,9 +10,9 @@ station and the bench. Nothing in this tool writes to the station.
 2. The read-only client and `export-223p` work against API 1.12 (the signed jar)
    and API 1.14 (source). 1.13/1.14-only operations such as `resolve` are gated on
    `capabilities` and are refused locally on 1.12.
-3. BACnet references use `bacnet://<device>/<type>,<instance>` so they line up with
-   a BACpypes3 BACnet-to-RDF scan document. Scan *code* is not vendored; `reconcile`
-   consumes the scan's TTL or CSV.
+3. BACnet references use `bacnet://<device>/<type>,<instance>`. Worker Pi 1 runs
+   the BACpypes3 driver against the configured points. `reconcile` joins that
+   TTL with the Niagara TTL (or with an external scan CSV).
 4. Official 223P SHACL was run against the bundled AHU snapshot (`223p.ttl` shapes):
    **0 Violations**. Warnings that an `ObservableProperty` has no `s223:Sensor`
    `observes` it are expected for an external-reference graph.

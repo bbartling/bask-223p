@@ -1,0 +1,15 @@
+flowchart TB
+  subgraph a [Building A — BACnet/IP BAS]
+    A1[Existing BAS] -->|BACnet read UDP 47808| A2["Linux edge\nBACpypes3"]
+  end
+  subgraph b [Building B — Niagara / JACE]
+    B1[Existing BAS] -->|read-only WSS| B2["Linux edge\nbaskStream"]
+  end
+  subgraph c [Building C — BACnet MS/TP]
+    C1["Existing BAS\nrouter in front"] -->|via router| C2["Linux edge\nBACnet/IP to the router"]
+  end
+  A2 -. 223P Turtle .-> M
+  B2 -. 223P Turtle .-> M
+  C2 -. 223P Turtle .-> M
+  M["ASHRAE 223P common model\nbacnet:// refs\nHaystack overlay only"]
+  M -. model file .-> P["General-purpose IoT / analytics platform\nillustrative, not a default pipeline"]

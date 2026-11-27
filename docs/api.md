@@ -179,7 +179,7 @@ curl -sS -b cookies.txt https://edge.example/
 
 - **Auth / role:** dashboard session
 - **Rate limit:** none
-- **Response:** browser SQL page
+- **Response:** SQL page. Statements run on the edge DuckDB store through `POST /api/sql`
 - **Errors:** redirect to `/login`
 
 ```bash
@@ -413,11 +413,25 @@ curl -sS -H "Authorization: Bearer $TOKEN" https://edge.example/rules
 ### GET /api/sql-rules
 
 - **Auth / role:** bearer from `POST /auth/token`, viewer or higher
-- **Response:** SQL rule file list and DuckDB-WASM URLs
+- **Response:** `engine` (`duckdb`) and the SQL rule file list
 - **Errors:** **401**
 
 ```bash
 curl -sS -H "Authorization: Bearer $TOKEN" https://edge.example/api/sql-rules
+```
+
+### POST /api/sql
+
+- **Auth / role:** bearer from `POST /auth/token`, viewer or higher
+- **Body:** `{"sql": "SELECT 1", "params": []}`
+- **Response:** `columns`, `rows`, and `truncated`. One read-only statement. `SELECT`, `WITH`, `SHOW`, `DESCRIBE`, `EXPLAIN`, and `SUMMARIZE` are allowed. Writes and DDL are rejected.
+- **Errors:** **400**, **401**
+
+```bash
+curl -sS -X POST -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"sql":"SELECT COUNT(*) AS n FROM fdd.point","params":[]}' \
+  https://edge.example/api/sql
 ```
 
 ## Points file

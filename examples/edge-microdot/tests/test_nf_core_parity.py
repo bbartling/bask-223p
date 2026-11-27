@@ -185,7 +185,7 @@ def test_bundle_and_rules_match_open_fdd_contract(tmp_path):
         s[0] in RULE_RESULT_STATUSES for s in statuses
     )
 
-    # Rules run unchanged against the bundle views (same as /sql WASM).
+    # Rules run unchanged against the bundle views (same tables /sql queries).
     con.execute("CREATE SCHEMA IF NOT EXISTS fdd")
     con.execute(f"CREATE VIEW fdd.input_sample AS SELECT * FROM read_parquet('{tmp_path / 'input_sample.parquet'}')")
     con.execute(f"CREATE VIEW fdd.point AS SELECT * FROM read_parquet('{tmp_path / 'point.parquet'}')")

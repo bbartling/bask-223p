@@ -2,7 +2,7 @@
 
 A single-codebase, strictly read-only FastAPI service and CLI showing how data-lake and FDD integrators move from an ASHRAE 223P / Brick Turtle graph (`export-223p` or a BACpypes3 `bacnet-rdf` scan) to live BACnet / Niagara telemetry stored locally in **DuckDB** and **CSV**.
 
-**Strict read-only posture:** neither driver exposes or sends BACnet writes (`WriteProperty`) or baskStream mutation operations, and both SPARQL and DuckDB SQL endpoints reject mutating queries.
+**Strict read-only posture:** neither driver exposes or sends BACnet writes (`WriteProperty`) or baskStream mutation operations, and both SPARQL and DuckDB SQL endpoints reject mutating queries. On a live controller or station, pass a points list. Do not discover or poll every object. The empty-target browse in the tests is for the bundled fake station only. History is server-side DuckDB plus CSV. There is no WASM build.
 
 ## Design choices (Python 3.14 stack)
 

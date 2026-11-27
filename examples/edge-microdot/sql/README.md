@@ -18,8 +18,9 @@ Each rule returns the Open-FDD sweep output columns:
 `equipment_id`, `series_id`, `sensor_role`, `fault_hours`, `covered_hours`.
 
 The host runner upserts those rows into `fdd.rule_result`. The same files run
-unchanged in the `/sql` DuckDB-WASM page after the Parquet bundle is registered
-as `fdd.input_sample`, `fdd.point`, and `fdd.rule_result`.
+on the edge through `POST /api/sql` against the in-memory DuckDB tables
+`fdd.input_sample`, `fdd.point`, and `fdd.rule_result`. Parquet snapshots are
+the on-disk history. There is no browser database.
 
 These are simplified in-process DuckDB implementations of the sensor-sweep
 rules. They share names, input/output columns, and SI units with the Open-FDD

@@ -1,0 +1,110 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="1064" viewBox="0 0 960 1064" role="img" aria-labelledby="title desc">
+  <title id="title">01 | Two-Pi test bench</title>
+  <desc id="desc">Illustrative bench. Worker Pi 1 reads a JCI FEC over BACnet/IP. Worker Pi 2 reads a Niagara station over baskStream. The paths are independent. Both export ASHRAE 223P Turtle.</desc>
+  <rect width="960" height="1064" fill="#ffffff"/>
+  <defs>
+    <marker id="b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 Z" fill="#2F6FDB"/>
+    </marker>
+    <marker id="p" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 Z" fill="#7A4EBF"/>
+    </marker>
+    <marker id="t" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 Z" fill="#1C8F86"/>
+    </marker>
+  </defs>
+
+  <text x="32" y="46" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="28" font-weight="700" fill="#1B2A4A">01 | Two-Pi test bench</text>
+  <text x="32" y="72" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="14" fill="#6B7280">Illustrative bench. Two independent edges. Not a default pipeline.</text>
+
+  <text x="32" y="108" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11" font-weight="700" letter-spacing="1.4" fill="#9AA3AF">FIELD / BAS NETWORK</text>
+
+  <rect x="28" y="122" width="400" height="96" rx="14" fill="#E7F1FB" stroke="#8FB4DE"/>
+  <text x="48" y="154" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#1B2A4A">JCI FEC</text>
+  <text x="48" y="176" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5C6770">BACnet/IP field controller</text>
+  <text x="48" y="196" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5C6770">UDP 47808</text>
+
+  <rect x="532" y="122" width="400" height="120" rx="14" fill="#F3EEF8" stroke="#C4B3DE"/>
+  <text x="552" y="154" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#1B2A4A">Niagara station</text>
+  <text x="552" y="176" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5C6770">baskStream service</text>
+  <text x="552" y="196" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5C6770">HTTPS station URL</text>
+  <text x="552" y="216" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5C6770">FEC integrated as BACnet</text>
+
+  <line x1="428" y1="186" x2="532" y2="186" stroke="#7A4EBF" stroke-width="1.75" marker-end="url(#p)"/>
+  <rect x="430" y="158" width="100" height="18" rx="5" fill="#ffffff"/>
+  <text x="480" y="171" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11" fill="#7A4EBF">BACnet integration</text>
+
+  <line x1="228" y1="218" x2="228" y2="292" stroke="#2F6FDB" stroke-width="1.75" marker-end="url(#b)"/>
+  <rect x="240" y="240" width="168" height="22" rx="6" fill="#ffffff"/>
+  <text x="248" y="255" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#2F6FDB">BACnet/IP UDP 47808</text>
+
+  <line x1="732" y1="242" x2="732" y2="292" stroke="#7A4EBF" stroke-width="1.75" marker-end="url(#p)"/>
+  <rect x="560" y="256" width="158" height="22" rx="6" fill="#ffffff"/>
+  <text x="568" y="271" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#7A4EBF">Authenticated WSS</text>
+
+  <text x="480" y="284" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11" font-weight="700" letter-spacing="1.4" fill="#9AA3AF">EDGE WORKERS</text>
+
+  <rect x="28" y="298" width="400" height="196" rx="14" fill="#E7F1FB" stroke="#8FB4DE"/>
+  <text x="48" y="328" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#1B2A4A">Worker Pi 1</text>
+  <text x="48" y="352" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5C6770">BACpypes3 BACnet/IP driver</text>
+  <text x="48" y="372" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5C6770">Who-Is / I-Am, object catalog</text>
+  <text x="48" y="392" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5C6770">ReadProperty, ReadPropertyMultiple</text>
+  <text x="48" y="412" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5C6770">Priority array</text>
+  <text x="48" y="432" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5C6770">Writes off by default</text>
+  <text x="48" y="456" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5C6770">Points file only. DuckDB + Parquet</text>
+  <text x="48" y="476" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#8B949E">Devices 54545 and 5007 are Who-Is names</text>
+
+  <text x="480" y="400" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="28" font-weight="700" fill="#9AA3AF">&#8800;</text>
+
+  <rect x="532" y="298" width="400" height="196" rx="14" fill="#F3EEF8" stroke="#C4B3DE"/>
+  <text x="552" y="328" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#1B2A4A">Worker Pi 2</text>
+  <text x="552" y="352" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5C6770">baskStream client</text>
+  <text x="552" y="372" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5C6770">Authenticated WebSocket, read-only</text>
+  <text x="552" y="392" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5C6770">SCRAM, then HTTP Basic if needed</text>
+  <text x="552" y="412" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5C6770">Does not browse the station</text>
+  <text x="552" y="432" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5C6770">No BACnet write path</text>
+  <text x="552" y="456" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5C6770">Points file only. DuckDB + Parquet</text>
+  <text x="552" y="476" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#8B949E">WSS uses the station URL host and port</text>
+
+  <line x1="228" y1="494" x2="228" y2="556" stroke="#1C8F86" stroke-width="1.75" stroke-dasharray="5 4"/>
+  <line x1="732" y1="494" x2="732" y2="556" stroke="#1C8F86" stroke-width="1.75" stroke-dasharray="5 4"/>
+  <line x1="228" y1="556" x2="732" y2="556" stroke="#1C8F86" stroke-width="1.75" stroke-dasharray="5 4"/>
+  <line x1="480" y1="556" x2="480" y2="584" stroke="#1C8F86" stroke-width="1.75" stroke-dasharray="5 4" marker-end="url(#t)"/>
+  <rect x="360" y="544" width="240" height="22" rx="6" fill="#ffffff"/>
+  <text x="480" y="559" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#1C8F86">223P Turtle, bacnet:// refs</text>
+
+  <text x="480" y="612" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11" font-weight="700" letter-spacing="1.4" fill="#9AA3AF">COMMON SEMANTIC REPRESENTATION</text>
+
+  <rect x="28" y="626" width="904" height="112" rx="14" fill="#E5F6F2" stroke="#7DBFB4"/>
+  <text x="48" y="658" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#1B2A4A">ASHRAE 223P</text>
+  <text x="48" y="682" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5C6770">Same bacnet://&lt;device&gt;/&lt;type&gt;,&lt;instance&gt; identity from either Pi</text>
+  <text x="48" y="702" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5C6770">QUDT local-name units. Haystack is an overlay only.</text>
+  <text x="48" y="722" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5C6770">reconcile compares the two Turtle files. It does not run on either Pi.</text>
+
+  <rect x="28" y="762" width="904" height="168" rx="14" fill="#FAFBFC" stroke="#E5E7EB"/>
+  <text x="48" y="790" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11" font-weight="700" letter-spacing="1.4" fill="#9AA3AF">LEGEND</text>
+
+  <line x1="48" y1="820" x2="88" y2="820" stroke="#2F6FDB" stroke-width="1.75" marker-end="url(#b)"/>
+  <text x="98" y="824" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5C6770">BACnet read</text>
+  <line x1="246" y1="820" x2="286" y2="820" stroke="#7A4EBF" stroke-width="1.75" marker-end="url(#p)"/>
+  <text x="296" y="824" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5C6770">Niagara read-only WebSocket</text>
+  <line x1="556" y1="820" x2="596" y2="820" stroke="#1C8F86" stroke-width="1.75" stroke-dasharray="5 4" marker-end="url(#t)"/>
+  <text x="606" y="824" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5C6770">223P model export</text>
+
+  <rect x="48" y="846" width="18" height="14" rx="3" fill="#E7F1FB" stroke="#8FB4DE"/>
+  <text x="74" y="858" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5C6770">BACnet device, Pi 1</text>
+  <rect x="246" y="846" width="18" height="14" rx="3" fill="#F3EEF8" stroke="#C4B3DE"/>
+  <text x="272" y="858" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5C6770">Niagara, Pi 2</text>
+  <rect x="426" y="846" width="18" height="14" rx="3" fill="#E5F6F2" stroke="#7DBFB4"/>
+  <text x="452" y="858" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5C6770">ASHRAE 223P</text>
+  <text x="606" y="858" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5C6770">&#8800; separate paths</text>
+
+  <line x1="48" y1="892" x2="88" y2="892" stroke="#1B2A4A" stroke-width="1.75"/>
+  <text x="98" y="896" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5C6770">Solid: live data</text>
+  <line x1="246" y1="892" x2="286" y2="892" stroke="#1B2A4A" stroke-width="1.75" stroke-dasharray="5 4"/>
+  <text x="296" y="896" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5C6770">Dashed: model or file export</text>
+
+  <text x="28" y="972" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#6B7280">Each Pi is a separate edge worker. It reads only the configured points. It does not crawl the BAS.</text>
+  <text x="28" y="994" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#6B7280">SPARQL on the Pi stays off unless EDGE_ENABLE_SPARQL is set. Writes stay off unless an admin turns them on.</text>
+  <text x="28" y="1016" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#6B7280">The station integrates the same FEC, so the two model exports can be compared.</text>
+</svg>

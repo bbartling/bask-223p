@@ -1,5 +1,9 @@
 # brickts
 
+Frozen tutorial. This example is outside the ASHRAE 223P validation stack
+(OntoEnv + Shifty). It keeps its own Brick 1.5 / pySHACL setup and is not
+pinned to the Open-FDD 5.0.22 roles file.
+
 ![brickts Swagger API](docs/swagger.jpg)
 
 A small tutorial API for **building data**:

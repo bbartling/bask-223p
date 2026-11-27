@@ -1,0 +1,14 @@
+flowchart TB
+  subgraph field [FIELD / BAS NETWORK]
+    FEC["JCI FEC\nBACnet/IP UDP 47808"]
+    STA["Niagara station\nbaskStream, HTTPS URL"]
+  end
+  subgraph edge [EDGE WORKERS]
+    PI1["Worker Pi 1\nBACpypes3\nWho-Is / I-Am, ReadProperty,\nReadPropertyMultiple, priority array\nwrites off"]
+    PI2["Worker Pi 2\nbaskStream WSS, read-only\npoints file only"]
+  end
+  FEC -->|BACnet read| PI1
+  STA -->|read-only WebSocket| PI2
+  PI1 -. 223P Turtle .-> M
+  PI2 -. 223P Turtle .-> M
+  M["ASHRAE 223P\nbacnet:// refs, QUDT local names\nHaystack overlay only\nreconcile compares the files"]

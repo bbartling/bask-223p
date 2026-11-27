@@ -105,8 +105,10 @@ cp .env.example .env
 docker compose --profile niagara up -d
 ```
 
-With no `--points` file the Niagara driver browses the station (default
-`BASK_BASE_ORD=slot:/Drivers`) and then polls those objects read-only.
+The Niagara driver polls only the points file (`--points` or `EDGE_POINTS_FILE`).
+It does not browse the station into the poll set. `BASK_BASE_ORD` (default
+`slot:/Drivers`) is used only to fill a missing ORD on a point that is already
+listed.
 
 The client uses form SCRAM first, then **HTTP Basic** on `/stream/health` and the WebSocket when SCRAM final messages are empty (same behavior as `bask_223p.bacnet.baskstream`).
 
@@ -132,8 +134,6 @@ The client uses form SCRAM first, then **HTTP Basic** on `/stream/health` and th
 | `EDGE_DB_MAX_MB` | `100` | Oldest-first retention cap |
 | `EDGE_HOT_BACKEND` | `dict` | `dict` or `duckdb` (`:memory:`) |
 | `EDGE_ENABLE_SPARQL` | `0` | Load pyoxigraph store. An explicit `0` stays off even if a TTL is loaded |
-| `EDGE_DUCKDB_WASM_URL` | `/static/vendor/duckdb/duckdb-browser.mjs` | Vendored DuckDB-WASM 1.32.0 (no CDN) |
-| `EDGE_DUCKDB_WASM_BUNDLE_BASE` | `/static/vendor/duckdb` | Base for `duckdb-eh.wasm` and the worker |
 | `EDGE_BACNET_ADDRESS` | — | BACpypes3 bind address (`host/prefix`, required for the BACnet driver) |
 | `EDGE_BACNET_DEVICES` | `54545,5007` | Named device instances for Who-Is. Not an object-list poll |
 | `EDGE_POINTS_FILE` | `/app/examples/edge-microdot/var/points.csv` | Points file used when `--points` is omitted. CSV columns: `device,object,property,units,label` |
@@ -201,12 +201,12 @@ Optional native HTTPS on the Pi: set `EDGE_SSL_CERT` and `EDGE_SSL_KEY`, then pa
 - `/api/bacnet/*` — bearer token. Who-Is, one-device object catalog, ReadProperty / ReadPropertyMultiple, and priority-array reads. Never map or poll every point on a live system: legacy MS/TP and IoT networks bottleneck easily. `POST /api/bacnet/read` rejects a `reads` list longer than `EDGE_BACNET_READ_MAX` (default 50), and the read routes share the per-device pace (`EDGE_BACNET_MAX_INFLIGHT`, `EDGE_BACNET_CHUNK_DELAY_S`). Writes and releases stay off unless `EDGE_BACNET_WRITES_ENABLED=1` and the token's user is `admin`. Details in [docs/bacnet.md](docs/bacnet.md).
 - `/api/modbus/points` and `POST /api/modbus/read` — bearer token, configured registers only. Optional `pymodbus` extra. Details in [docs/modbus.md](docs/modbus.md).
 - `GET /api/model.ttl`, `GET /api/model`, `GET /api/points.csv`, `GET /api/config/export`, `GET /api/export.zip` — bearer token (or a UI access token). The zip is the model, the configured-point CSV, an allowlisted config, and a manifest. `GET /api/model.ttl` is the only route that becomes public when `EDGE_PUBLIC_MODEL=1`. Publishing that zip is off unless `EDGE_PUBLISH_ENABLED=1`. The full route list is [../../docs/api.md](../../docs/api.md).
-- `GET /sql` — session login; browser DuckDB-WASM SQL runner (zero query compute on the Pi)
+- `GET /sql` — session login; read-only SQL against the in-memory DuckDB store (`POST /api/sql`)
 - `WS /live` — bearer token (query or `Authorization`)
 
-## Portable Parquet bundle & browser DuckDB-WASM (`/sql`)
+## DuckDB and Parquet
 
-The edge service keeps DuckDB **in memory** (`duckdb.connect(':memory:')`) fed from the hot cache and periodic writes a compact, ZSTD-compressed Parquet snapshot under `var/snapshots/` (`EDGE_SNAPSHOT_INTERVAL=300`, rotated under `EDGE_DB_MAX_MB=100`). On startup it reloads the newest valid snapshot back into memory.
+The edge service keeps DuckDB **in memory** (`duckdb.connect(':memory:')`) fed from the hot cache and periodically writes a compact, ZSTD-compressed Parquet snapshot under `var/snapshots/` (rotated under `EDGE_DB_MAX_MB=100`). On startup it reloads the newest valid snapshot back into memory. There is no DuckDB-WASM build and no browser database. `/sql` sends one read-only statement to that store.
 
 `GET /api/export/bundle?hours=N` (bearer token required) exports a ZIP of three Parquet files whose schemas match the Open-FDD core contract (SI values, UTC timestamps). `fdd.point.role` is the 223P-derived snake_case input term (no `sat`/`mat` acronyms).
 
@@ -216,11 +216,9 @@ The edge service keeps DuckDB **in memory** (`duckdb.connect(':memory:')`) fed f
 | `point.parquet` | `site_id`, `point_key`, `equipment_id`, `role`, `role_source`, `kind`, `unit`, `source_unit`, `si_scale`, `si_offset`, `haystack_id`, `attrs`, `updated_at` | `fdd.point`; `role` = 223P snake_case input term |
 | `rule_result.parquet` | Open-FDD `fdd.rule_result` columns (`status`, `fault_hours`, `covered_hours`, `subject_key`, windows, …) | Latest assessment per series/rule |
 
-Open `/sql` (behind session login) to run ad-hoc SQL or any cookbook rule from `sql/fdd/rules/*.sql` directly in your browser via **DuckDB-WASM** (loaded from jsDelivr by default; override `EDGE_DUCKDB_WASM_URL` and `EDGE_DUCKDB_WASM_BUNDLE_BASE` to self-host). The browser fetches `/api/export/bundle?hours=N` with your token, registers the three Parquet files as `fdd.input_sample`, `fdd.point`, and `fdd.rule_result` plus a `sensor_history` view, and executes queries locally with zero compute on the host.
+`/sql` (behind session login) runs ad-hoc SQL or a cookbook rule from `sql/fdd/rules/*.sql` on the edge. Schema parity with the Open-FDD NF app is tabulated in `docs/parity-with-open-fdd-nf.md`.
 
-DuckDB stays in-process with the edge app. An optional later fdd-worker container sharing the Parquet snapshot volume is described in `docs/duckdb-wasm-bundle.md`. Schema parity with the Open-FDD NF app is tabulated in `docs/parity-with-open-fdd-nf.md`.
-
-**Notebook (optional):** `notebooks/edge_duckdb_sweep.ipynb` is optional — `/sql` runs the same `sql/fdd/rules/*.sql` files in the browser. If you still prefer a local notebook, download `/api/export/bundle` or inspect a Parquet snapshot from `var/snapshots/` with `duckdb -ui` on a PC.
+**Notebook (optional):** `notebooks/edge_duckdb_sweep.ipynb` is optional. Download `/api/export/bundle` or inspect a Parquet snapshot from `var/snapshots/` with DuckDB on a PC.
 
 ## Memory notes (SPARQL)
 
