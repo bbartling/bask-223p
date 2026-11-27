@@ -100,9 +100,12 @@ def reset_export_limits() -> None:
     _EXPORT_HITS.clear()
 
 
-def env_flag(name: str, environ: Mapping[str, str] | None = None) -> bool:
-    raw = (environ if environ is not None else os.environ).get(name, "")
-    return raw.strip().lower() in {"1", "true", "yes", "on"}
+def env_flag(name: str, environ: Mapping[str, str] | None = None, *, default: bool = False) -> bool:
+    source = os.environ if environ is None else environ
+    if name not in source:
+        return default
+    raw = source.get(name) or ""
+    return str(raw).strip().lower() in {"1", "true", "yes", "on"}
 
 
 def public_model_enabled(environ: Mapping[str, str] | None = None) -> bool:
@@ -265,7 +268,7 @@ def export_config_document(
         "flush_interval_s": _optional_number(env, "EDGE_FLUSH_INTERVAL"),
         "fdd_interval_s": _optional_number(env, "EDGE_FDD_INTERVAL"),
         "snapshot_interval_s": _optional_number(env, "EDGE_SNAPSHOT_INTERVAL"),
-        "sparql_enabled": env_flag("EDGE_ENABLE_SPARQL", env),
+        "sparql_enabled": env_flag("EDGE_ENABLE_SPARQL", env, default=True),
         "hot_backend": (env.get("EDGE_HOT_BACKEND") or "").strip() or None,
         "point_count": len(list(targets)),
         "public_model": public_model_enabled(env),
