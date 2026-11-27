@@ -20,6 +20,11 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+  - package-ecosystem: pip
+    directory: "/central"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
   - package-ecosystem: docker
     directory: "/examples/edge-microdot"
     schedule:
@@ -32,7 +37,15 @@ updates:
     directory: "/examples/sparql-playground"
     schedule:
       interval: weekly
+  - package-ecosystem: docker
+    directory: "/central"
+    schedule:
+      interval: weekly
   - package-ecosystem: docker-compose
     directory: "/examples/edge-microdot"
+    schedule:
+      interval: weekly
+  - package-ecosystem: docker-compose
+    directory: "/central"
     schedule:
       interval: weekly
