@@ -9,7 +9,7 @@ Neither driver maps or polls every point on a live system. History is server-sid
 
 ![01 | Two-Pi test bench](docs/architecture/test-bench.png)
 
-Worker Pi 1 reads the FEC over BACnet. Worker Pi 2 reads the Niagara station on a Windows PC. Both export a 223P model to the central collector.
+The FEC is MS/TP. A BASrouter speaks BACnet/IP to Worker Pi 1 and to the Niagara 4 station. Worker Pi 2 reads that station with baskStream. Each Pi builds the 223P model. The collector pulls `GET /api/export.zip`.
 
 ![02 | Campus-scale edge architecture](docs/architecture/campus.png)
 
@@ -23,14 +23,17 @@ Diagram notes and Mermaid sources: [docs/architecture/](docs/architecture/README
 
 ## Test bench
 
-Python 3.11 or newer for the library. The Pi image uses Python 3.15.
+Python 3.11 or newer for the library. CI runs 3.11, 3.12, 3.13, and 3.14. The Pi image uses Python 3.15.
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -e ".[all]"
 python -m pytest -q
+python -m bask_223p --help
 ```
+
+The library lives in `src/bask_223p`. Imports stay `bask_223p`.
 
 The bench is two Raspberry Pis running `examples/edge-microdot`, one profile each. Copy `.env.example` to `.env`, set the bind address or the station credentials, and put only the points you need in `var/points.csv`.
 

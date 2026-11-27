@@ -14,8 +14,8 @@ token_env: CENTRAL_TOKEN
 
 # Optional official 223P SHACL. Paths are relative to this file's directory
 # when you run from the repo with --config central/config.example.yaml.
-# shapes: ../bask_223p/ontologies/223p/223p.ttl
-# ontology_dir: ../bask_223p/ontologies/223p/closure
+# shapes: ../src/bask_223p/ontologies/223p/223p.ttl
+# ontology_dir: ../src/bask_223p/ontologies/223p/closure
 
 edges:
   - name: pi-bacnet

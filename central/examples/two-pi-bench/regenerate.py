@@ -15,8 +15,8 @@ from central.merge import stable_source_turtle, stable_turtle, stable_trig  # no
 from central.two_pi import build  # noqa: E402
 
 HERE = Path(__file__).resolve().parent
-SHAPES = ROOT / "bask_223p" / "ontologies" / "223p" / "223p.ttl"
-ONTOLOGY = ROOT / "bask_223p" / "ontologies" / "223p" / "closure"
+SHAPES = ROOT / "src" / "bask_223p" / "ontologies" / "223p" / "223p.ttl"
+ONTOLOGY = ROOT / "src" / "bask_223p" / "ontologies" / "223p" / "closure"
 
 
 def main() -> None:

@@ -49,7 +49,7 @@ export EDGE_PI_NIAGARA_TOKEN=replace-me
 python -m central --config central/central.yaml
 ```
 
-`[graph]` installs the offline 223P SHACL stack (Shifty and OntoEnv). Without it the collector still stores, merges, and runs the reference check. Official SHACL is recorded as an error until that extra is installed and `shapes` plus `ontology_dir` are set. The vendored files are `bask_223p/ontologies/223p/223p.ttl` and `bask_223p/ontologies/223p/closure`.
+`[graph]` installs the offline 223P SHACL stack (Shifty and OntoEnv). Without it the collector still stores, merges, and runs the reference check. Official SHACL is recorded as an error until that extra is installed and `shapes` plus `ontology_dir` are set. The vendored files are `src/bask_223p/ontologies/223p/223p.ttl` and `src/bask_223p/ontologies/223p/closure`.
 
 ## Docker Compose
 

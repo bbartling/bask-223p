@@ -10,7 +10,7 @@ from central.merge import skolemize, stable_nt, stable_source_turtle, stable_tur
 from central.two_pi import build
 
 HERE = Path(__file__).resolve().parents[1] / "examples" / "two-pi-bench"
-SHAPES = Path(__file__).resolve().parents[2] / "bask_223p" / "ontologies" / "223p" / "223p.ttl"
+SHAPES = Path(__file__).resolve().parents[2] / "src" / "bask_223p" / "ontologies" / "223p" / "223p.ttl"
 ONTOLOGY = SHAPES.parent / "closure"
 
 
