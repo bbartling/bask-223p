@@ -45,10 +45,16 @@ def _zip_model(bundle: bytes, limit: int) -> bytes:
     except zipfile.BadZipFile as exc:
         raise FetchError("export.zip is not a zip file") from exc
     with archive:
-        names = [name for name in archive.namelist() if name == "model.ttl" or name.endswith("/model.ttl")]
-        if len(names) != 1 or ".." in names[0].split("/"):
+        members = archive.infolist()
+        for info in members:
+            parts = info.filename.split("/")
+            if info.filename.startswith("/") or ".." in parts:
+                raise FetchError("export.zip must contain one model.ttl")
+        names = [info.filename for info in members if info.filename == "model.ttl" or info.filename.endswith("/model.ttl")]
+        if len(names) != 1:
             raise FetchError("export.zip must contain one model.ttl")
-        if archive.getinfo(names[0]).file_size > limit:
+        total = sum(info.file_size for info in members)
+        if total > limit or archive.getinfo(names[0]).file_size > limit:
             raise FetchError("model.ttl exceeds max_upload_bytes")
         return archive.read(names[0])
 
@@ -145,6 +151,7 @@ class Collector:
             "attempts": self.cfg.pull_attempts,
             "backoff_s": self.cfg.pull_backoff_s,
             "verify": edge.tls_verify,
+            "max_bytes": self.cfg.max_upload_bytes,
         }
         if self.sleep is not None:
             kwargs["sleep"] = self.sleep
