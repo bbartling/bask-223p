@@ -8,6 +8,7 @@ import urllib.request
 from typing import Callable
 
 RETRYABLE = {429, 500, 502, 503, 504}
+DEFAULT_MAX_BYTES = 32 * 1024 * 1024
 
 
 class FetchError(RuntimeError):
@@ -30,6 +31,34 @@ def _ssl_context(verify: bool) -> ssl.SSLContext:
     return context
 
 
+class _RefuseRedirect(urllib.request.HTTPRedirectHandler):
+    """A redirect would send the bearer token to whatever host answered."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: ARG002
+        raise FetchError(f"HTTP {code}")
+
+
+def _opener(verify: bool):
+    context = _ssl_context(verify)
+    https = urllib.request.HTTPSHandler(context=context)
+    return urllib.request.build_opener(_RefuseRedirect, https)
+
+
+def _read_limited(response, max_bytes: int) -> bytes:
+    headers = getattr(response, "headers", None)
+    declared = headers.get("Content-Length") if headers is not None else None
+    if declared:
+        try:
+            if int(declared) > max_bytes:
+                raise FetchError("export exceeds max_upload_bytes")
+        except ValueError:
+            pass
+    body = response.read(max_bytes + 1)
+    if len(body) > max_bytes:
+        raise FetchError("export exceeds max_upload_bytes")
+    return body
+
+
 def pull_export(
     base_url: str,
     token: str,
@@ -38,6 +67,7 @@ def pull_export(
     backoff_s: float = 1.0,
     verify: bool = True,
     timeout: float = 60.0,
+    max_bytes: int = DEFAULT_MAX_BYTES,
     sleep: Callable[[float], None] = time.sleep,
     urlopen=None,
 ) -> bytes:
@@ -45,11 +75,18 @@ def pull_export(
 
     Retries connection failures and HTTP 429, 500, 502, 503, and 504.
     Delay is ``backoff_s * 2**attempt``, or ``Retry-After`` when it is a
-    number of seconds. 401, 403, and 404 are not retried.
+    number of seconds. 401, 403, 404, and redirects are not retried.
+    The body is refused when it is larger than ``max_bytes``.
     """
     url = base_url.rstrip("/") + "/api/export.zip"
-    opener = urlopen or urllib.request.urlopen
     context = _ssl_context(verify)
+    builtin = _opener(verify).open
+
+    def _open(request):
+        if urlopen is None:
+            return builtin(request, timeout=timeout)
+        return urlopen(request, timeout=timeout, context=context)
+
     last = "pull failed"
     for attempt in range(attempts):
         request = urllib.request.Request(
@@ -62,8 +99,8 @@ def pull_export(
             method="GET",
         )
         try:
-            with opener(request, timeout=timeout, context=context) as response:
-                return response.read()
+            with _open(request) as response:
+                return _read_limited(response, max_bytes)
         except urllib.error.HTTPError as exc:
             last = f"HTTP {exc.code}"
             if exc.code not in RETRYABLE or attempt + 1 == attempts:
