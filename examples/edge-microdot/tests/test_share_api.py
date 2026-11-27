@@ -276,6 +276,35 @@ def test_share_requires_auth_and_serves_model_points_and_config(share_app):
     _run(_go())
 
 
+def test_export_zip_model_matches_the_turtle_route(share_app):
+    """GET /api/export.zip is what the collector pulls, and its Turtle is the model route."""
+    from microdot.test_client import TestClient
+
+    async def _go():
+        client = TestClient(share_app)
+        denied = await client.get("/api/export.zip")
+        assert denied.status_code == 401
+        assert denied.json["error"]["code"] == "unauthorized"
+        headers = await _token(client)
+        turtle = await client.get("/api/model.ttl", headers=headers)
+        assert turtle.status_code == 200
+        bundle = await client.get("/api/export.zip", headers=headers)
+        assert bundle.status_code == 200
+        assert _header(bundle, "Content-Type").startswith("application/zip")
+        with zipfile.ZipFile(io.BytesIO(bundle.body)) as archive:
+            model = archive.read("model.ttl")
+            table = archive.read("points.csv").decode("utf-8")
+        assert model == turtle.body
+        parsed = Graph().parse(data=model, format="turtle")
+        assert len(parsed) == len(Graph().parse(data=turtle.text, format="turtle"))
+        assert "degC" in table
+        assert "http://qudt.org" not in table
+        assert CANARY not in model.decode("utf-8")
+        assert CANARY not in table
+
+    _run(_go())
+
+
 def test_public_model_is_opt_in_and_limited_to_turtle(share_app, monkeypatch):
     from microdot.test_client import TestClient
 
