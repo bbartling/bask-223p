@@ -10,7 +10,7 @@ WORKDIR /app
 # linux/arm64 manylinux wheels exist for duckdb and friends; the alpine/musl
 # image would compile duckdb from source (too heavy for a 1 GB Pi).
 COPY pyproject.toml README.md LICENSE NOTICE ./
-COPY bask_223p ./bask_223p
+COPY src/bask_223p ./src/bask_223p
 COPY examples/illustrative-ahu-refs.ttl ./examples/illustrative-ahu-refs.ttl
 COPY examples/bench-scan.ttl ./examples/bench-scan.ttl
 COPY examples/edge-microdot ./examples/edge-microdot

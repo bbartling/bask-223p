@@ -22,6 +22,7 @@ all = ["pyshifty==0.6.0", "ontoenv==0.6.4", "pyshacl==0.40.2", "rapidfuzz==3.14.
 bask-223p = "bask_223p.cli:main"
 
 [tool.setuptools.packages.find]
+where = ["src"]
 include = ["bask_223p*"]
 
 [tool.setuptools.package-data]
@@ -34,3 +35,4 @@ bask_223p = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra"
+pythonpath = ["src"]

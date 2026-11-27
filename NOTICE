@@ -22,6 +22,6 @@ owners and is not included or licensed here. Users need their own valid
 Niagara license to run a station.
 
 Bundled example ontologies in examples/ontology-imports/, if any, retain
-their upstream licenses. Vendored documents in bask_223p/ontologies/223p/
+their upstream licenses. Vendored documents in src/bask_223p/ontologies/223p/
 (ASHRAE 223P, QUDT 3.4.0, W3C SHACL, W3C SKOS, and VAEM) keep their upstream
 licenses and are not covered by the MIT license.

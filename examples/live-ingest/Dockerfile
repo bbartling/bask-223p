@@ -3,7 +3,7 @@ FROM python:3.14-slim
 WORKDIR /app
 
 COPY pyproject.toml README.md LICENSE NOTICE ./
-COPY bask_223p ./bask_223p
+COPY src/bask_223p ./src/bask_223p
 COPY examples/illustrative-ahu-refs.ttl ./examples/illustrative-ahu-refs.ttl
 COPY examples/bench-scan.ttl ./examples/bench-scan.ttl
 COPY examples/live-ingest ./examples/live-ingest

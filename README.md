@@ -30,7 +30,10 @@ python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -e ".[all]"
 python -m pytest -q
+python -m bask_223p --help
 ```
+
+The library lives in `src/bask_223p`. Imports stay `bask_223p`.
 
 The bench is two Raspberry Pis running `examples/edge-microdot`, one profile each. Copy `.env.example` to `.env`, set the bind address or the station credentials, and put only the points you need in `var/points.csv`.
 
