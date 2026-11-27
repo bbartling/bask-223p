@@ -159,18 +159,19 @@ python -m bask_223p reconcile --niagara outputs/station/site-223p.ttl `
 ## 3. Validate against official 223P SHACL
 
 One command, one function: `validate_223p`. Pins are `ontoenv==0.6.4` and `pyshifty==0.6.0`
-(`pip install "bask-223p[graph]"`). The 223P file is `https://open223.info/223p.ttl`,
-sha256 `08f80bd6e15052f28cdfd354bdf46ff96e5e1afdba36a4dbed5186fc1ea51c41`.
+(`pip install "bask-223p[graph]"`). The 223P file is the vendored copy of
+`https://open223.info/223p.ttl`, sha256
+`08f80bd6e15052f28cdfd354bdf46ff96e5e1afdba36a4dbed5186fc1ea51c41`.
 
 ```powershell
 python -m bask_223p validate --data outputs/site-223p.ttl --shapes path/to/223p.ttl --online --out outputs/validation
 ```
 
-`--online` fetches the import closure (223P, QUDT 3.4.0 `qudt-all`, SHACL, SKOS, VAEM) into
-the output directory. The check itself is offline and strict: OntoEnv `copy_closure`, then
-`shifty.validate` with its defaults and `minimum_severity="Violation"`. A missing engine or
-a short closure is an error. `--cross-check pyshacl` runs pySHACL 0.40.2 with `advanced=True`
-and does not set `conforms`.
+`--online` copies the vendored import closure (QUDT 3.4.0 `qudt-all`, SHACL, SKOS, VAEM)
+into the output directory. It does not fetch. OntoEnv resolves that closure offline
+(`copy_closure`, strict), then `shifty.validate` runs with its defaults and
+`minimum_severity="Violation"`. A missing engine or a short closure is an error.
+`--cross-check pyshacl` runs pySHACL 0.40.2 with `advanced=True` and does not set `conforms`.
 
 `export-223p --shapes` and live-ingest `POST /api/model/validate` call the same function.
 `conforms` is true when there are no SHACL Violations. Warnings are recorded and do not fail

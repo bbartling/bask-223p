@@ -35,10 +35,10 @@ complete 223 topology (no connection points or sensors).
 ## Validating the TTL against official 223P
 
 1. [OntoEnv](https://github.com/gtfierro/ontoenv-rs) manages ontology imports and versions.
-   Add the generated TTL (it `owl:imports` the 223P ontology IRI) and the public 223P file
-   at `https://open223.info/223p.ttl`, then take the imports closure (QUDT and other
-   dependencies come along). `copy_closure` returns a mutable `rdflib.Graph` on stable
-   releases.
+   The pinned 223P file and the closure it needs (QUDT 3.4.0 `qudt-all`, SHACL, SKOS, VAEM)
+   are vendored under `bask_223p/ontologies/223p/`. OntoEnv loads those files offline and
+   `copy_closure` returns a mutable `rdflib.Graph`. Live fetches are not used: the VAEM
+   URL can return HTML, which is not RDF.
 2. `validate_223p` runs [Shifty](https://github.com/gtfierro/shifty) `0.6.0` on that closure
    with Shifty's defaults and `minimum_severity="Violation"`. OntoEnv is `0.6.4`, offline
    and strict. A missing engine is an error. `--cross-check pyshacl` does not set `conforms`.

@@ -17,3 +17,23 @@ jobs:
       - run: python -m pytest -q
       - name: Shifty + OntoEnv integration smoke tests
         run: python -m pytest -q tests/test_integration.py
+  official-223p:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install -e '.[graph]'
+      - name: Install the vendored 223P file and its import closure
+        run: python scripts/fetch_223p_closure.py --dest "$RUNNER_TEMP/223p"
+      - name: Official 223P test must run and pass
+        env:
+          S223_SHAPES: ${{ runner.temp }}/223p/223p.ttl
+          S223_ONTOLOGY_DIR: ${{ runner.temp }}/223p/closure
+        run: |
+          python -m pytest -q tests/test_official_223p_shacl.py | tee "$RUNNER_TEMP/official.txt"
+          if grep -Eiq 'skipped' "$RUNNER_TEMP/official.txt"; then
+            echo "official 223P test was skipped"
+            exit 1
+          fi
