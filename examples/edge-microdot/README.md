@@ -8,7 +8,7 @@ A **1 GB RAM–class** ingest service for BACnet and Niagara stations. It mirror
 | --- | --- | --- |
 | HTTP stack | Starlette + Uvicorn | Microdot built-in server |
 | Typical use | Laptop / VM demos, notebooks | Pi 4, aarch64, SD card |
-| Graph extras | OntoEnv, pyshacl, playground UI | Optional pyoxigraph only |
+| Graph extras | OntoEnv, pyshacl, playground UI | pyoxigraph SPARQL, on unless `EDGE_ENABLE_SPARQL=0` |
 | Hot path | Same RPM / baskStream logic | Same chunking & auth fallbacks |
 
 FastAPI remains the right default for rich SPARQL playgrounds and validation tooling. On the edge, most value is **poll → cache → batched DuckDB → rules → WebSocket**, which Microdot serves with a smaller import surface.
@@ -74,7 +74,7 @@ device,object,property,units,label
 Native (on the Pi):
 
 ```bash
-python3 -m pip install -e ../.. -e '.[sparql]'
+python3 -m pip install -e ../.. -e .
 export EDGE_DRIVER=bacnet
 export EDGE_BACNET_ADDRESS=192.168.1.50/24
 python -m edge_microdot \
@@ -133,7 +133,7 @@ The client uses form SCRAM first, then **HTTP Basic** on `/stream/health` and th
 | `EDGE_DB_PATH` | `var/edge_history.duckdb` | Snapshot base path (writes `var/snapshots/*.parquet`, no growing `.duckdb` file) |
 | `EDGE_DB_MAX_MB` | `100` | Oldest-first retention cap |
 | `EDGE_HOT_BACKEND` | `dict` | `dict` or `duckdb` (`:memory:`) |
-| `EDGE_ENABLE_SPARQL` | `0` | Load pyoxigraph store. An explicit `0` stays off even if a TTL is loaded |
+| `EDGE_ENABLE_SPARQL` | `1` | Load the pyoxigraph store. An explicit `0` stays off even if a TTL is loaded |
 | `EDGE_BACNET_ADDRESS` | — | BACpypes3 bind address (`host/prefix`, required for the BACnet driver) |
 | `EDGE_BACNET_DEVICES` | `54545,5007` | Named device instances for Who-Is. Not an object-list poll |
 | `EDGE_POINTS_FILE` | `/app/examples/edge-microdot/var/points.csv` | Points file used when `--points` is omitted. CSV columns: `device,object,property,units,label` |
@@ -222,7 +222,7 @@ The edge service keeps DuckDB **in memory** (`duckdb.connect(':memory:')`) fed f
 
 ## Memory notes (SPARQL)
 
-On a Pi 4 with **1 GB RAM**, run with `EDGE_ENABLE_SPARQL=0` unless you need joins in the field. A illustrative 223P TTL (~few thousand triples) with pyoxigraph 0.5.x adds on the order of **30–80 MB RSS** on top of the ingest core; keep SPARQL off when headroom is tight. Measurement script: `pytest tests/test_memory.py -s` inside the container image (see CI-like numbers in the PR).
+SPARQL is on by default. On a Pi with **1 GB RAM**, set `EDGE_ENABLE_SPARQL=0` unless you need joins in the field. A illustrative 223P TTL (~few thousand triples) with pyoxigraph 0.5.x adds on the order of **30–80 MB RSS** on top of the ingest core; keep SPARQL off when headroom is tight. Measurement script: `pytest tests/test_memory.py -s` inside the container image (see CI-like numbers in the PR).
 
 ## Tests
 

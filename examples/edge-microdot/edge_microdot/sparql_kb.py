@@ -1,4 +1,4 @@
-"""Optional pyoxigraph SPARQL over the loaded 223P graph."""
+"""pyoxigraph SPARQL over the loaded 223P graph. An explicit EDGE_ENABLE_SPARQL=0 skips it."""
 from __future__ import annotations
 
 from typing import Any
@@ -42,7 +42,7 @@ class SparqlKb:
 
     def query(self, query_text: str) -> dict[str, Any]:
         if not self.enabled or self.store is None:
-            raise RuntimeError("SPARQL disabled (set EDGE_ENABLE_SPARQL=1 and install pyoxigraph)")
+            raise RuntimeError("SPARQL disabled (EDGE_ENABLE_SPARQL=0)")
         clean = validate_read_only_sparql(query_text)
         results = self.store.query(clean)
         if results.variables is not None:
