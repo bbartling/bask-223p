@@ -12,7 +12,12 @@ jobs:
           python-version: "3.12"
       - name: Pinned dependencies match PyPI
         run: |
-          python scripts/check_pypi_pins.py pyproject.toml examples/edge-microdot/pyproject.toml
+          python scripts/check_pypi_pins.py \
+            pyproject.toml \
+            examples/edge-microdot/pyproject.toml \
+            examples/live-ingest/pyproject.toml \
+            examples/sparql-playground/pyproject.toml \
+            central/pyproject.toml
           python scripts/ot_protocol_watch.py --verify
   pytest:
     runs-on: ubuntu-latest
