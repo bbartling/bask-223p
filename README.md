@@ -9,7 +9,7 @@ Neither driver maps or polls every point on a live system. History is server-sid
 
 ![01 | Two-Pi test bench](docs/architecture/test-bench.png)
 
-Worker Pi 1 reads BACnet and Worker Pi 2 reads Niagara. Both export a 223P model.
+Worker Pi 1 reads the FEC over BACnet. Worker Pi 2 reads the Niagara station on a Windows PC. Both export a 223P model to the central collector.
 
 ![02 | Campus-scale edge architecture](docs/architecture/campus.png)
 
