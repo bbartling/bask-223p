@@ -1,0 +1,32 @@
+{
+  "references": {
+    "bacnet_external_references": 6,
+    "conforms": false,
+    "engine": "rdflib-223p-ref-check",
+    "violations": [
+      {
+        "message": "more than one bacnet:object-name: ['DAP-P', 'DuctStatic']",
+        "node": "https://example.org/bench/bacnet-ref/2e9296f24d0dbdfedf5a",
+        "path": "bacnet:object-name"
+      }
+    ],
+    "warnings": []
+  },
+  "shacl": {
+    "conforms": false,
+    "engine": "shifty",
+    "shapes": "223p.ttl",
+    "status": "ok",
+    "violation_count": 1,
+    "violations": [
+      {
+        "focus": "https://example.org/bench/bacnet-ref/2e9296f24d0dbdfedf5a",
+        "message": "More than 1 values on path <http://data.ashrae.org/bacnet/2020#object-name>",
+        "path": "http://data.ashrae.org/bacnet/2020#object-name",
+        "severity": "Violation"
+      }
+    ],
+    "warning_count": 0,
+    "warnings": []
+  }
+}

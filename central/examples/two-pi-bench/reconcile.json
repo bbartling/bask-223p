@@ -1,0 +1,88 @@
+{
+  "join_key": "(device instance, object type, object instance) == bacnet://<device>/<type>,<instance>",
+  "pairs": [
+    {
+      "conflicting": 2,
+      "duplicate_collapsed": 2,
+      "left": {
+        "edge": "pi-bacnet",
+        "site": "bench"
+      },
+      "only_in_left": 1,
+      "only_in_right": 1,
+      "right": {
+        "edge": "pi-niagara",
+        "site": "bench"
+      },
+      "rows": [
+        {
+          "bacnet_uri": "bacnet://5007/analog-input,1",
+          "kind": "duplicate-collapsed",
+          "left_name": "SA-T",
+          "left_unit": "DEG_C",
+          "name_differs": false,
+          "object_identifier": "analog-input,1",
+          "right_name": "SA-T",
+          "right_unit": "DEG_C",
+          "unit_differs": false
+        },
+        {
+          "bacnet_uri": "bacnet://5007/analog-input,2",
+          "kind": "duplicate-collapsed",
+          "left_name": "RA-T",
+          "left_unit": "DEG_C",
+          "name_differs": false,
+          "object_identifier": "analog-input,2",
+          "right_name": "RA-T",
+          "right_unit": "DEG_C",
+          "unit_differs": false
+        },
+        {
+          "bacnet_uri": "bacnet://5007/analog-input,3",
+          "kind": "conflicting",
+          "left_name": "MA-T",
+          "left_unit": "DEG_C",
+          "name_differs": false,
+          "object_identifier": "analog-input,3",
+          "right_name": "MA-T",
+          "right_unit": "DEG_F",
+          "unit_differs": true
+        },
+        {
+          "bacnet_uri": "bacnet://5007/analog-input,4",
+          "kind": "conflicting",
+          "left_name": "DAP-P",
+          "left_unit": "PA",
+          "name_differs": true,
+          "object_identifier": "analog-input,4",
+          "right_name": "DuctStatic",
+          "right_unit": "PA",
+          "unit_differs": false
+        },
+        {
+          "bacnet_uri": "bacnet://5007/analog-input,5",
+          "kind": "only_in_right",
+          "left_name": "",
+          "left_unit": "",
+          "name_differs": false,
+          "object_identifier": "analog-input,5",
+          "right_name": "OA-T",
+          "right_unit": "DEG_C",
+          "unit_differs": false
+        },
+        {
+          "bacnet_uri": "bacnet://5007/analog-output,1",
+          "kind": "only_in_left",
+          "left_name": "SF-O",
+          "left_unit": "PERCENT",
+          "name_differs": false,
+          "object_identifier": "analog-output,1",
+          "right_name": "",
+          "right_unit": "",
+          "unit_differs": false
+        }
+      ],
+      "shared_bacnet_refs": 4
+    }
+  ]
+}

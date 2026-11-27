@@ -1,0 +1,11 @@
+flowchart TB
+  subgraph edges [Edges]
+    B["BACnet edge\nGET /api/export.zip"]
+    N["Niagara edge\nsame export, read-only"]
+  end
+  B -. HTTPS pull, bearer .-> C
+  N -. HTTPS pull, bearer .-> C
+  B -->|optional POST export| C
+  C["Central collector\nport 8780\nnamed graph per edge\nunion default graph"]
+  C --> R["reconcile and 223P SHACL"]
+  C -. unified 223P model .-> A["Analytics platform\nillustrative"]

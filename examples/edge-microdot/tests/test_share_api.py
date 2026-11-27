@@ -389,7 +389,7 @@ def test_publish_is_off_by_default_and_does_not_log_the_token(monkeypatch, caplo
 
         def request(self, method, url, headers=None, timeout=None, **kwargs):
             self.calls.append({"method": method, "url": url, "headers": headers or {}, **kwargs})
-            if method == "GET" and url.endswith("/releases/tags/edge-share"):
+            if method == "GET" and url.endswith("/releases/tags/edge-share-demo-pi-1"):
                 return _Response(404)
             if method == "POST" and url.endswith("/releases"):
                 return _Response(
@@ -412,12 +412,15 @@ def test_publish_is_off_by_default_and_does_not_log_the_token(monkeypatch, caplo
             "EDGE_PUBLISH_TOKEN": TOKEN,
             "EDGE_PUBLISH_REPO": "example/edge-share",
             "EDGE_PUBLISH_KIND": "release",
+            "EDGE_NAME": "pi-1",
         },
     )
     assert result == {
         "repo": "example/edge-share",
         "kind": "release",
-        "ref": "edge-share",
+        "ref": "edge-share-demo-pi-1",
+        "site": "demo",
+        "edge": "pi-1",
         "files": ["model.ttl", "export.zip"],
     }
     assert TOKEN not in json.dumps(result)
@@ -444,29 +447,99 @@ def test_publish_can_write_a_repository_branch():
             return self._payload
 
     class _Transport:
+        def __init__(self):
+            self.puts = []
+
         def request(self, method, url, headers=None, timeout=None, **kwargs):
             if method == "GET":
                 return _Response(404)
             if method == "PUT":
                 assert kwargs["json"]["branch"] == "edge-share"
                 assert "content" in kwargs["json"]
+                self.puts.append(url)
                 return _Response(201, {"content": {"path": url.rsplit("/", 1)[-1]}})
             raise AssertionError((method, url))
 
+    transport = _Transport()
     result = publish_once(
         cfg=LoadedConfig(site="demo"),
         targets=[],
-        session=_Transport(),
+        session=transport,
         environ={
             "EDGE_PUBLISH_ENABLED": "1",
             "EDGE_PUBLISH_TOKEN": TOKEN,
             "EDGE_PUBLISH_REPO": "example/edge-share",
             "EDGE_PUBLISH_KIND": "repo",
             "EDGE_PUBLISH_BRANCH": "edge-share",
+            "EDGE_NAME": "pi-1",
         },
     )
     assert result["kind"] == "repo"
+    assert result["files"] == ["share/demo/pi-1/model.ttl", "share/demo/pi-1/export.zip"]
+    assert all(url.endswith(path) for url, path in zip(transport.puts, result["files"]))
     assert TOKEN not in json.dumps(result)
+
+
+def test_two_edges_publish_to_different_paths():
+    class _Response:
+        def __init__(self, status, payload=None):
+            self.status_code = status
+            self._payload = payload or {}
+
+        def json(self):
+            return self._payload
+
+    class _Transport:
+        def __init__(self):
+            self.calls = []
+
+        def request(self, method, url, headers=None, timeout=None, **kwargs):
+            self.calls.append((method, url, kwargs))
+            if method == "GET" and "/releases/tags/" in url:
+                return _Response(404)
+            if method == "POST" and url.endswith("/releases"):
+                return _Response(201, {"upload_url": "https://uploads.example/assets{?name,label}", "assets": []})
+            if method == "POST" and url.startswith("https://uploads.example/"):
+                return _Response(201, {})
+            if method == "GET":
+                return _Response(404)
+            if method == "PUT":
+                return _Response(201, {})
+            raise AssertionError((method, url))
+
+    shared = {
+        "EDGE_PUBLISH_ENABLED": "1",
+        "EDGE_PUBLISH_TOKEN": TOKEN,
+        "EDGE_PUBLISH_REPO": "example/edge-share",
+        "EDGE_PUBLISH_TAG": "edge-share",
+        "EDGE_PUBLISH_BRANCH": "edge-share",
+    }
+    release_refs = []
+    repo_paths = []
+    for edge in ("pi-bacnet", "pi-niagara"):
+        transport = _Transport()
+        publish_once(
+            cfg=LoadedConfig(site="bench"),
+            targets=[],
+            graph=_graph(),
+            session=transport,
+            environ={**shared, "EDGE_PUBLISH_KIND": "release", "EDGE_SITE": "bench", "EDGE_NAME": edge},
+        )
+        tags = [url.rsplit("/", 1)[-1] for method, url, _ in transport.calls if "/releases/tags/" in url]
+        release_refs.append(tags[0])
+        transport = _Transport()
+        result = publish_once(
+            cfg=LoadedConfig(site="bench"),
+            targets=[],
+            session=transport,
+            environ={**shared, "EDGE_PUBLISH_KIND": "repo", "EDGE_SITE": "bench", "EDGE_NAME": edge},
+        )
+        repo_paths.append(result["files"])
+    assert release_refs == ["edge-share-bench-pi-bacnet", "edge-share-bench-pi-niagara"]
+    assert repo_paths[0] != repo_paths[1]
+    assert repo_paths[0] == ["share/bench/pi-bacnet/model.ttl", "share/bench/pi-bacnet/export.zip"]
+    assert repo_paths[1] == ["share/bench/pi-niagara/model.ttl", "share/bench/pi-niagara/export.zip"]
+    assert TOKEN not in json.dumps({"refs": release_refs, "paths": repo_paths})
 
 
 def test_streaming_response_is_a_file_object():

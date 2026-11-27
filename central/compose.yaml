@@ -1,0 +1,29 @@
+# Optional. The published port is 8780. Inside the container the process
+# binds all interfaces only because CENTRAL_BIND_ANY=1. On a Windows PC, do
+# not set that variable; name the LAN interface in the config instead.
+services:
+  central:
+    build:
+      context: ..
+      dockerfile: central/Dockerfile
+    ports:
+      - "8780:8780"
+    environment:
+      CENTRAL_BIND_ANY: "1"
+      CENTRAL_TOKEN: ${CENTRAL_TOKEN:?set CENTRAL_TOKEN}
+      EDGE_PI_BACNET_TOKEN: ${EDGE_PI_BACNET_TOKEN:-}
+      EDGE_PI_NIAGARA_TOKEN: ${EDGE_PI_NIAGARA_TOKEN:-}
+    command:
+      - python
+      - -m
+      - central
+      - --config
+      - /config/central.yaml
+      - --bind
+      - 0.0.0.0
+    volumes:
+      - central-data:/app/data
+      - ./config.example.yaml:/config/central.yaml:ro
+
+volumes:
+  central-data:

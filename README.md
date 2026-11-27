@@ -7,9 +7,17 @@ Edge software for HVAC networks. ASHRAE 223P is the model. Haystack tags are an 
 
 Neither driver maps or polls every point on a live system. History is server-side DuckDB, with Parquet snapshots on disk. There is no DuckDB-WASM build. `reconcile` joins the two 223P graphs.
 
-![01 | Two-Pi test bench](docs/architecture/test-bench.svg)
+![01 | Two-Pi test bench](docs/architecture/test-bench.png)
 
-![02 | Campus-scale edge architecture](docs/architecture/campus.svg)
+Worker Pi 1 reads the FEC over BACnet. Worker Pi 2 reads the Niagara station on a Windows PC. Both export a 223P model to the central collector.
+
+![02 | Campus-scale edge architecture](docs/architecture/campus.png)
+
+Each edge sends its model to the central collector, which feeds an analytics platform.
+
+![03 | Central collector](docs/architecture/central.png)
+
+The collector pulls or accepts a push, keeps a named graph per edge, and writes reconcile and validation reports.
 
 Diagram notes and Mermaid sources: [docs/architecture/](docs/architecture/README.md).
 
@@ -45,9 +53,14 @@ Details, including which routes are actually served on each Pi: [examples/edge-m
 
 `examples/live-ingest` is the same two drivers behind a FastAPI service for a laptop or VM, with SPARQL and a DuckDB SQL API. It is not the Pi image.
 
+## Central collector
+
+`central/` runs on a Windows PC or a Linux host, including the PC that runs the Niagara station. It pulls each edge's `export.zip` over HTTPS, or accepts an authenticated push, and merges the Turtle into one 223P dataset. It does not connect to controllers. Default port **8780**. Quick start, including the firewall rule: [central/README.md](central/README.md).
+
 ## Further reading
 
-- [docs/architecture/](docs/architecture/README.md) — bench and campus diagrams
+- [docs/architecture/](docs/architecture/README.md) — bench, campus, and collector diagrams
+- [central/README.md](central/README.md) — pull, push, merge, and the Windows quick start
 - [docs/api.md](docs/api.md) — every edge HTTP route
 - [docs/cli.md](docs/cli.md) — export, reconcile, and 223P validation
 - [examples/edge-microdot/docs/bacnet.md](examples/edge-microdot/docs/bacnet.md) — BACnet driver

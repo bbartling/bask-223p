@@ -2,6 +2,11 @@
 
 Publishing is off unless ``EDGE_PUBLISH_ENABLED`` is set. The token is read
 from ``EDGE_PUBLISH_TOKEN`` and is never included in logs or return values.
+
+Each edge writes its own path. A repository push uses
+``share/<site>/<edge>/model.ttl`` and ``share/<site>/<edge>/export.zip``.
+A release push uses the tag ``<tag>-<site>-<edge>`` (default tag
+``edge-share``). Two edges cannot replace each other's files.
 """
 from __future__ import annotations
 
@@ -19,6 +24,7 @@ LOG = logging.getLogger("edge.publish")
 
 _REPO = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 _REF = re.compile(r"^[A-Za-z0-9_.-]{1,80}$")
+_SEGMENT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
 _API = "https://api.github.com"
 
 
@@ -34,7 +40,35 @@ def publish_enabled(environ: Mapping[str, str] | None = None) -> bool:
     return env_flag("EDGE_PUBLISH_ENABLED", environ)
 
 
-def _settings(environ: Mapping[str, str]) -> dict[str, str]:
+def _segment(value: str, label: str) -> str:
+    text = value.strip()
+    if not _SEGMENT.fullmatch(text):
+        raise PublishError(f"{label} must be a path segment (letters, digits, '.', '_' or '-')")
+    return text
+
+
+def edge_identity(cfg, environ: Mapping[str, str]) -> tuple[str, str]:
+    """Site and edge names that keep one edge off another edge's path."""
+    site = (environ.get("EDGE_SITE") or getattr(cfg, "site", "") or "").strip()
+    edge = (environ.get("EDGE_NAME") or environ.get("EDGE_PUBLISH_EDGE") or "").strip()
+    return _segment(site, "EDGE_SITE"), _segment(edge, "EDGE_NAME")
+
+
+def share_dir(site: str, edge: str) -> str:
+    return f"share/{site}/{edge}"
+
+
+def release_tag(site: str, edge: str, requested: str) -> str:
+    """Per-edge tag. A shared ``EDGE_PUBLISH_TAG`` still cannot collide."""
+    suffix = f"{site}-{edge}"
+    base = requested.strip() or "edge-share"
+    ref = base if base.endswith(suffix) else f"{base}-{suffix}"
+    if not _REF.fullmatch(ref):
+        raise PublishError("EDGE_PUBLISH_TAG plus the site and edge is not a valid ref")
+    return ref
+
+
+def _settings(cfg, environ: Mapping[str, str]) -> dict[str, str]:
     if not publish_enabled(environ):
         raise PublishDisabled(
             "Publishing is off. Set EDGE_PUBLISH_ENABLED=1 to opt in. "
@@ -49,13 +83,25 @@ def _settings(environ: Mapping[str, str]) -> dict[str, str]:
     kind = environ.get("EDGE_PUBLISH_KIND", "release").strip().lower() or "release"
     if kind not in {"release", "repo"}:
         raise PublishError("EDGE_PUBLISH_KIND must be release or repo")
+    site, edge = edge_identity(cfg, environ)
     if kind == "release":
-        ref = environ.get("EDGE_PUBLISH_TAG", "edge-share").strip() or "edge-share"
+        ref = release_tag(site, edge, environ.get("EDGE_PUBLISH_TAG", "edge-share"))
+        files = ["model.ttl", "export.zip"]
     else:
         ref = environ.get("EDGE_PUBLISH_BRANCH", "edge-share").strip() or "edge-share"
-    if not _REF.fullmatch(ref):
-        raise PublishError("EDGE_PUBLISH_TAG or EDGE_PUBLISH_BRANCH is not a valid ref")
-    return {"token": token, "repo": repo, "kind": kind, "ref": ref}
+        if not _REF.fullmatch(ref):
+            raise PublishError("EDGE_PUBLISH_BRANCH is not a valid ref")
+        folder = share_dir(site, edge)
+        files = [f"{folder}/model.ttl", f"{folder}/export.zip"]
+    return {
+        "token": token,
+        "repo": repo,
+        "kind": kind,
+        "ref": ref,
+        "site": site,
+        "edge": edge,
+        "files": files,
+    }
 
 
 def _call(transport, method: str, url: str, *, token: str, **kwargs):
@@ -139,10 +185,13 @@ def _publish_release(transport, *, token: str, repo: str, ref: str, model: bytes
         _expect(uploaded, f"upload {name}")
 
 
-def _publish_repo(transport, *, token: str, repo: str, ref: str, model: bytes, bundle: bytes) -> None:
+def _publish_repo(
+    transport, *, token: str, repo: str, ref: str, site: str, edge: str, model: bytes, bundle: bytes
+) -> None:
+    folder = share_dir(site, edge)
     files = (
-        ("share/model.ttl", model, "update model.ttl"),
-        ("share/export.zip", bundle, "update export.zip"),
+        (f"{folder}/model.ttl", model, f"update {folder}/model.ttl"),
+        (f"{folder}/export.zip", bundle, f"update {folder}/export.zip"),
     )
     for path, payload, message in files:
         url = f"{_API}/repos/{repo}/contents/{path}"
@@ -174,7 +223,7 @@ def publish_once(
 ) -> dict[str, Any]:
     """Push the current model and zip. Returns repo, kind, and ref. No token."""
     env = os.environ if environ is None else environ
-    settings = _settings(env)
+    settings = _settings(cfg, env)
     model_graph = graph if graph is not None else getattr(cfg, "graph", None)
     model = serialize_model(model_graph, store, "turtle")
     bundle = build_export_zip(
@@ -195,10 +244,30 @@ def publish_once(
         )
     else:
         _publish_repo(
-            session, token=token, repo=settings["repo"], ref=settings["ref"], model=model, bundle=bundle
+            session,
+            token=token,
+            repo=settings["repo"],
+            ref=settings["ref"],
+            site=settings["site"],
+            edge=settings["edge"],
+            model=model,
+            bundle=bundle,
         )
-    LOG.info("published model.ttl and export.zip to %s %s %s", settings["repo"], settings["kind"], settings["ref"])
-    return {"repo": settings["repo"], "kind": settings["kind"], "ref": settings["ref"], "files": ["model.ttl", "export.zip"]}
+    LOG.info(
+        "published %s to %s %s %s",
+        " ".join(settings["files"]),
+        settings["repo"],
+        settings["kind"],
+        settings["ref"],
+    )
+    return {
+        "repo": settings["repo"],
+        "kind": settings["kind"],
+        "ref": settings["ref"],
+        "site": settings["site"],
+        "edge": settings["edge"],
+        "files": list(settings["files"]),
+    }
 
 
 def publish_cli(argv: Sequence[str] | None = None) -> int:
