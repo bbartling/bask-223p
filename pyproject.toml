@@ -24,6 +24,13 @@ bask-223p = "bask_223p.cli:main"
 [tool.setuptools.packages.find]
 include = ["bask_223p*"]
 
+[tool.setuptools.package-data]
+bask_223p = [
+    "ontologies/223p/*.ttl",
+    "ontologies/223p/closure/*.ttl",
+    "ontologies/223p/closure/*.rdf",
+]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra"

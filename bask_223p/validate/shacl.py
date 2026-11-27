@@ -153,32 +153,76 @@ def _ontology_files(ontology_dir: Path | None) -> list[Path]:
     ]
 
 
-# OntoEnv's own client fails on the plain-HTTP VAEM document from GitHub-hosted runners.
-# These HTTPS (and one HTTP) documents are the closure 223P imports: SHACL, QUDT 3.4.0, SKOS, VAEM.
-_CLOSURE_URLS = (
-    "https://www.w3.org/ns/shacl.ttl",
-    "https://qudt.org/3.4.0/shacl/qudt-all",
-    "https://www.w3.org/2009/08/skos-reference/skos.rdf",
-    "https://www.linkedmodel.org/schema/vaem.ttl",
+# Resolved once with OntoEnv 0.6.4 and stored in the repo. Do not fetch these
+# at runtime. ``https://www.linkedmodel.org/schema/vaem.ttl`` returns
+# ``<!DOCTYPE html>`` from some networks; oxigraph reports that as
+# "Invalid IRI code point ' '" between columns 1 and 16.
+VENDORED_223P_CLOSURE = (
+    {
+        "filename": "shacl.ttl",
+        "sha256": "0e5d8aea0eab98a072d4a02faaee1ee914ec99eab2ca473429726faed4a13f69",
+        "iri": "http://www.w3.org/ns/shacl#",
+        "source": "https://www.w3.org/ns/shacl.ttl",
+    },
+    {
+        "filename": "qudt-3.4.0-shacl-all.ttl",
+        "sha256": "fc7ab1041a382e18fccdda7a99bd2c2a5a3d27e2aaa407561d68c3cf089b562c",
+        "iri": "http://qudt.org/3.4.0/shacl/qudt-all",
+        "source": "https://qudt.org/3.4.0/shacl/qudt-all",
+    },
+    {
+        "filename": "skos.rdf",
+        "sha256": "e79633b8d0564816cee8a99f5c9acf9a0e6fc7257c7209acd684ecad53a89dd6",
+        "iri": "http://www.w3.org/2004/02/skos/core",
+        "source": "https://www.w3.org/2009/08/skos-reference/skos.rdf",
+    },
+    {
+        "filename": "vaem.ttl",
+        "sha256": "c20ef803616277ff6683edb5fb70aa8931e9e867e864d2f06bb4acfe3238774f",
+        "iri": "http://www.linkedmodel.org/schema/vaem",
+        "source": "https://www.linkedmodel.org/schema/vaem.ttl",
+    },
 )
 
 
+def vendored_223p_dir() -> Path:
+    return Path(__file__).resolve().parent.parent / "ontologies" / "223p"
+
+
+def vendored_223p_ttl() -> Path:
+    return vendored_223p_dir() / "223p.ttl"
+
+
+def vendored_closure_dir() -> Path:
+    return vendored_223p_dir() / "closure"
+
+
+def _read_pinned_rdf(path: Path, expected_sha256: str) -> bytes:
+    if not path.is_file():
+        raise FileNotFoundError(path)
+    payload = path.read_bytes()
+    digest = hashlib.sha256(payload).hexdigest()
+    if digest != expected_sha256:
+        raise ValueError(f"{path} sha256 {digest} != {expected_sha256}")
+    head = payload.lstrip()[:16].lower()
+    if head.startswith(b"<!doctype") or head.startswith(b"<html"):
+        raise ValueError(f"{path} is HTML, not RDF")
+    return payload
+
+
 def materialize_223p_closure(shapes_path: Path, dest: Path) -> list[str]:
-    """Download the imports of the pinned 223P file into ``dest``.
+    """Copy the vendored imports of the pinned 223P file into ``dest``.
 
-    This is the only online step. ``validate_223p`` reads those files offline.
+    OntoEnv resolves that closure offline. ``validate_223p`` reads the same files.
     """
-    import urllib.request
-
     shapes_path = _pinned_shapes_path(shapes_path)
     dest.mkdir(parents=True, exist_ok=True)
-    for url in _CLOSURE_URLS:
-        request = urllib.request.Request(url, headers={"User-Agent": "open-hvac-edge"})
-        with urllib.request.urlopen(request, timeout=60) as response:
-            payload = response.read()
-        suffix = Path(url).suffix or ".ttl"
-        token = hashlib.sha256(url.encode("utf-8")).hexdigest()[:16]
-        (dest / f"{token}{suffix}").write_bytes(payload)
+    for item in VENDORED_223P_CLOSURE:
+        source = vendored_closure_dir() / item["filename"]
+        payload = _read_pinned_rdf(source, item["sha256"])
+        target = dest / item["filename"]
+        if source.resolve() != target.resolve():
+            target.write_bytes(payload)
     try:
         from ontoenv import OntoEnv
     except ImportError as exc:
@@ -191,8 +235,9 @@ def materialize_223p_closure(shapes_path: Path, dest: Path) -> list[str]:
         if missing:
             raise ValueError("Unresolved owl:imports: " + ", ".join(missing))
         names = [str(name) for name in env.list_closure(S223_ROOT) if str(name) != S223_ROOT]
-    if len(names) != len(_CLOSURE_URLS):
-        raise ValueError(f"Expected {len(_CLOSURE_URLS)} imported ontologies, got {names}")
+    expected = {item["iri"] for item in VENDORED_223P_CLOSURE}
+    if set(names) != expected:
+        raise ValueError(f"Expected imported ontologies {sorted(expected)}, got {names}")
     return names
 
 

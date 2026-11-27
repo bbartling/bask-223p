@@ -25,7 +25,7 @@ jobs:
         with:
           python-version: "3.12"
       - run: python -m pip install -e '.[graph]'
-      - name: Fetch the pinned 223P file and its import closure
+      - name: Install the vendored 223P file and its import closure
         run: python scripts/fetch_223p_closure.py --dest "$RUNNER_TEMP/223p"
       - name: Official 223P test must run and pass
         env:

@@ -1,4 +1,8 @@
-"""Command line entry points. All generated RDF is local unless --online explicitly used."""
+"""Command line entry points. Generated RDF stays local.
+
+``validate --online`` copies the vendored 223P import closure. It does not
+fetch ontologies. The generic ``closure --online`` flag still may.
+"""
 from __future__ import annotations
 
 import argparse
@@ -93,7 +97,7 @@ def build_parser() -> argparse.ArgumentParser:
     v.add_argument('--shapes', type=Path, help='pinned 223p.ttl (or set S223_SHAPES)')
     v.add_argument('--imports-dir', type=Path, help='offline closure files (or set S223_ONTOLOGY_DIR)')
     v.add_argument('--online', action='store_true',
-                   help='fetch the 223P import closure into --imports-dir before the offline check')
+                   help='copy the vendored 223P import closure into --imports-dir before the offline check')
     v.add_argument('--cross-check', choices=['pyshacl'],
                    help='also run pySHACL advanced=True; does not change conforms')
     v.add_argument('--out', type=Path, default=Path('outputs/validation'))
