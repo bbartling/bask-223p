@@ -4,7 +4,9 @@ from __future__ import annotations
 import json
 import re
 import sys
+import time
 import tomllib
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -28,11 +30,25 @@ def pins(path: Path) -> list[tuple[str, str]]:
     return found
 
 
-def latest(name: str) -> str:
+def latest(name: str, *, attempts: int = 3, sleep=time.sleep, urlopen=None) -> str:
+    """Read the current PyPI version. A dropped TLS handshake is retried."""
+    opener = urlopen or urllib.request.urlopen
     url = f"https://pypi.org/pypi/{name}/json"
-    with urllib.request.urlopen(url, timeout=30) as response:
-        payload = json.load(response)
-    return payload["info"]["version"]
+    last: BaseException | None = None
+    for attempt in range(attempts):
+        try:
+            with opener(url, timeout=30) as response:
+                payload = json.load(response)
+            version = payload["info"]["version"]
+            if not isinstance(version, str) or not version:
+                raise ValueError("missing version")
+            return version
+        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, ValueError, KeyError) as exc:
+            last = exc
+            if attempt + 1 == attempts:
+                break
+            sleep(float(attempt + 1))
+    raise RuntimeError(f"{name}: PyPI lookup failed") from last
 
 
 def main(argv: list[str]) -> int:
