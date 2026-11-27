@@ -689,11 +689,13 @@ Publishing is off by default. Turn it on only if you intend other people to brow
 | `EDGE_PUBLISH_TOKEN` | unset | GitHub token. Read from the environment only. Never written to the zip, the logs, or a command argument |
 | `EDGE_PUBLISH_REPO` | unset | `owner/name` |
 | `EDGE_PUBLISH_KIND` | `release` | `release` or `repo` |
-| `EDGE_PUBLISH_TAG` | `edge-share` | Release tag when kind is `release` |
-| `EDGE_PUBLISH_BRANCH` | `edge-share` | Branch when kind is `repo`. The branch must already exist |
+| `EDGE_PUBLISH_TAG` | `edge-share` | Release tag prefix. The tag that is written is `<tag>-<site>-<edge>` |
+| `EDGE_PUBLISH_BRANCH` | `edge-share` | Branch when kind is `repo`. The branch must already exist. Paths differ per edge |
 | `EDGE_PUBLISH_INTERVAL` | `86400` | Seconds between scheduled pushes. Minimum 60 |
+| `EDGE_SITE` | loaded site | Path segment. With `EDGE_NAME`, keeps this edge off another edge's files |
+| `EDGE_NAME` | unset | Required. Path segment for this edge |
 
-The token needs permission to create a release and upload assets, or to write `share/model.ttl` and `share/export.zip` on the branch. The release note states that site data may be sensitive.
+The token needs permission to create a release, or to write `share/<site>/<edge>/model.ttl` and `share/<site>/<edge>/export.zip` on the branch. A release uses the tag `edge-share-<site>-<edge>` (or `<EDGE_PUBLISH_TAG>-<site>-<edge>`). Asset names on that tag stay `model.ttl` and `export.zip`. Two edges do not share a tag or a path, so one push cannot replace the other. The release note states that site data may be sensitive.
 
 The running service pushes once shortly after startup and then every interval. It logs the repository and ref, not the token. A failed push is retried on the next interval and does not stop polling.
 
@@ -703,7 +705,77 @@ One-shot, with the same variables:
 EDGE_PUBLISH_ENABLED=1 \
 EDGE_PUBLISH_TOKEN=... \
 EDGE_PUBLISH_REPO=example/edge-share \
+EDGE_SITE=bench \
+EDGE_NAME=pi-bacnet \
 edge-microdot publish --points path/to/points.yaml
 ```
 
-Exit **2** when publishing is off. Exit **1** when the token, repository, or GitHub call fails. The command prints the reason and does not print the token.
+Exit **2** when publishing is off. Exit **1** when the token, repository, edge name, or GitHub call fails. The command prints the reason and does not print the token.
+
+Push to the collector, instead of GitHub, is `POST /api/edges/{site}/{edge}/export` on the central process. The payload, limit, and idempotency rule are in the next section and in `central/README.md`.
+
+## Central collector
+
+`central/` is a separate process. It stores 223P exports from many edges. It does not open a connection to a controller or a station.
+
+The listener defaults to TCP **8780**, which is not 80, 443, 1911, 4911, or the edge's 8080. It binds the LAN interface named in the config, not every interface. Every route requires `Authorization: Bearer`. The central token is `CENTRAL_TOKEN`. A push may also use that edge's own token. Tokens are read from the environment. They are not written to the config, the data directory, or the log.
+
+`GET /api/openapi.json` is the machine-readable list. SPARQL is not in that document unless `sparql: true`.
+
+### Pull
+
+The collector calls each configured edge:
+
+- **Endpoint:** `GET {base_url}/api/export.zip`
+- **Header:** `Authorization: Bearer <edge token>` and `Accept: application/zip`
+- **Schedule:** once at startup, then every `interval_s` (default 3600, minimum 30). `POST /api/pull` runs the same pass immediately. `POST /api/pull/{site}/{edge}` pulls one edge.
+- **Retry:** 3 attempts (`pull_attempts`). Connection errors and HTTP 429, 500, 502, 503, and 504 wait `pull_backoff_s * 2^attempt` seconds, or `Retry-After` when it is a number of seconds (capped at 30). 401, 403, and 404 are not retried.
+- **Store:** `data/<site>/<edge>/<timestamp>-<ns>/model.ttl` and `export.zip`. The last `keep` snapshots are kept. The same model bytes do not create another snapshot.
+
+```mermaid
+sequenceDiagram
+  participant C as Central
+  participant E as Edge
+  loop interval_s, and POST /api/pull
+    C->>E: GET /api/export.zip
+    Note over C,E: Authorization Bearer, Accept application/zip
+    alt 200
+      E-->>C: export.zip
+      C->>C: store data/site/edge/timestamp
+    else 429 or 5xx
+      E-->>C: error
+      C->>E: retry with backoff
+    else 401, 403, or 404
+      E-->>C: error
+      C->>C: record last_error, do not retry
+    end
+  end
+```
+
+### Push
+
+An edge may upload to the collector instead of waiting for a pull.
+
+- **Endpoint:** `POST /api/edges/{site}/{edge}/export`
+- **Auth:** `Authorization: Bearer` with `CENTRAL_TOKEN` or with that edge's token. The site and edge must already be in the config.
+- **Payload:** `Content-Type: application/zip` (an `export.zip` that contains `model.ttl`) or `Content-Type: text/turtle`. `Content-Length` is required.
+- **Size:** `max_upload_bytes` (default 32 MiB). A larger body is **413**.
+- **Idempotency:** the same model bytes as the latest snapshot return **200** and `Idempotent: true` and do not add a directory. `Idempotency-Key` reused with a different body is **409**. The same key and the same bytes return the stored snapshot.
+- **GitHub alternative:** `edge-microdot publish` writes `share/<site>/<edge>/model.ttl` and `share/<site>/<edge>/export.zip` on a branch, or a release tag `<tag>-<site>-<edge>`. See Publishing above.
+
+```mermaid
+sequenceDiagram
+  participant E as Edge
+  participant C as Central
+  E->>C: POST /api/edges/{site}/{edge}/export
+  Note over E,C: Bearer token, Content-Type zip or turtle, optional Idempotency-Key
+  alt new bytes
+    C-->>E: 201 snapshot
+  else same bytes
+    C-->>E: 200 Idempotent true
+  else same key, different body
+    C-->>E: 409
+  end
+```
+
+After a pull or a push the collector loads each edge as a named graph, unions them, runs reconcile on edges that share a `bacnet://` ref, and runs 223P validation. Turtle (`GET /api/model.ttl`) is the union. TriG (`GET /api/model.trig`) and N-Quads (`GET /api/model.nq`) keep the named graphs. JSON-LD is `GET /api/model.jsonld`. How the merge treats blank nodes and conflicting values is in `central/README.md`.

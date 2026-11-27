@@ -8,8 +8,8 @@ flowchart TB
   subgraph c [Building C — BACnet MS/TP]
     C1["Existing BAS\nrouter in front"] -->|via router| C2["Linux edge\nBACnet/IP to the router"]
   end
-  A2 -. 223P Turtle .-> M
-  B2 -. 223P Turtle .-> M
-  C2 -. 223P Turtle .-> M
-  M["ASHRAE 223P common model\nbacnet:// refs\nHaystack overlay only"]
-  M -. model file .-> P["General-purpose IoT / analytics platform\nillustrative, not a default pipeline"]
+  A2 -. HTTPS pull, bearer .-> M
+  B2 -. HTTPS pull, bearer .-> M
+  C2 -. HTTPS pull, bearer .-> M
+  M["Central collector\nnamed graph per edge\nunion, reconcile, 223P SHACL"]
+  M -. unified 223P model .-> P["General-purpose IoT / analytics platform\nillustrative, not a default pipeline"]

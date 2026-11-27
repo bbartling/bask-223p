@@ -17,6 +17,10 @@ gap_reports/
 *.env
 *.pem
 
+# Collector snapshots. The worked example under central/examples is committed.
+central/data/
+central/central.yaml
+
 # Live-ingest & sparql-playground local databases/runtime state
 var/
 *.duckdb

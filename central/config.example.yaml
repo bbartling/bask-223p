@@ -1,0 +1,30 @@
+# Copy to central.yaml. Do not put tokens in this file.
+# Each token_env value is the name of an environment variable.
+
+interface: Ethernet
+port: 8780
+data_dir: data
+keep: 8
+interval_s: 3600
+pull_attempts: 3
+pull_backoff_s: 1
+max_upload_bytes: 33554432
+sparql: false
+token_env: CENTRAL_TOKEN
+
+# Optional official 223P SHACL. Paths are relative to this file's directory
+# when you run from the repo with --config central/config.example.yaml.
+# shapes: ../bask_223p/ontologies/223p/223p.ttl
+# ontology_dir: ../bask_223p/ontologies/223p/closure
+
+edges:
+  - name: pi-bacnet
+    site: bench
+    base_url: https://192.0.2.11
+    token_env: EDGE_PI_BACNET_TOKEN
+    tls_verify: true
+  - name: pi-niagara
+    site: bench
+    base_url: https://192.0.2.12
+    token_env: EDGE_PI_NIAGARA_TOKEN
+    tls_verify: true

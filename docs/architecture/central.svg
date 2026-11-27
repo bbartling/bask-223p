@@ -1,0 +1,112 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="1180" viewBox="0 0 960 1180" role="img" aria-labelledby="title desc">
+  <title id="title">03 | Central collector</title>
+  <desc id="desc">The central collector pulls 223P exports from edges over HTTPS, or accepts an authenticated push. Each edge is a named graph. Reconcile and SHACL run on the union.</desc>
+  <rect width="960" height="1180" fill="#ffffff"/>
+  <defs>
+    <marker id="t" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 Z" fill="#1C8F86"/>
+    </marker>
+    <marker id="p" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 Z" fill="#7A4EBF"/>
+    </marker>
+  </defs>
+
+  <text x="28" y="44" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="26" font-weight="700" fill="#1B2A4A">03 | Central collector</text>
+  <text x="28" y="70" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="14" fill="#6B7280">Reads edges only. Does not connect to a controller or a station.</text>
+
+  <text x="28" y="106" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11" font-weight="700" letter-spacing="1.4" fill="#9AA3AF">EDGES</text>
+
+  <rect x="28" y="122" width="288" height="156" rx="14" fill="#E7F1FB" stroke="#8FB4DE"/>
+  <text x="44" y="150" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#1B2A4A">Edge, BACnet</text>
+  <text x="44" y="174" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#5C6770">GET /api/export.zip</text>
+  <text x="44" y="194" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#5C6770">Authorization: Bearer</text>
+  <text x="44" y="214" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#5C6770">Accept: application/zip</text>
+  <text x="44" y="234" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#5C6770">Token stays in the environment</text>
+  <text x="44" y="254" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#5C6770">223P model, bacnet:// refs</text>
+
+  <rect x="336" y="122" width="288" height="156" rx="14" fill="#F3EEF8" stroke="#C4B3DE"/>
+  <text x="352" y="150" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#1B2A4A">Edge, Niagara</text>
+  <text x="352" y="174" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#5C6770">Same export route</text>
+  <text x="352" y="194" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#5C6770">Read-only toward the station</text>
+  <text x="352" y="214" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#5C6770">No station writes</text>
+  <text x="352" y="234" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#5C6770">QUDT local-name units</text>
+  <text x="352" y="254" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#5C6770">Haystack is an overlay only</text>
+
+  <rect x="644" y="122" width="288" height="156" rx="14" fill="#F5F6F8" stroke="#D8DCE3"/>
+  <text x="660" y="150" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#1B2A4A">Optional push</text>
+  <text x="660" y="174" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#5C6770">POST /api/edges/site/edge/export</text>
+  <text x="660" y="194" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#5C6770">Zip or Turtle, 32 MiB</text>
+  <text x="660" y="214" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#5C6770">Idempotency-Key</text>
+  <text x="660" y="234" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#5C6770">Or GitHub share/site/edge/</text>
+  <text x="660" y="254" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#5C6770">Per-edge tag, no overwrite</text>
+
+  <line x1="172" y1="278" x2="172" y2="332" stroke="#1C8F86" stroke-width="1.75" stroke-dasharray="5 4"/>
+  <line x1="480" y1="278" x2="480" y2="332" stroke="#1C8F86" stroke-width="1.75" stroke-dasharray="5 4"/>
+  <line x1="788" y1="278" x2="788" y2="332" stroke="#7A4EBF" stroke-width="1.75"/>
+  <line x1="172" y1="332" x2="788" y2="332" stroke="#1C8F86" stroke-width="1.75"/>
+  <line x1="480" y1="332" x2="480" y2="358" stroke="#1C8F86" stroke-width="1.75" marker-end="url(#t)"/>
+  <rect x="332" y="300" width="296" height="18" rx="5" fill="#ffffff"/>
+  <text x="480" y="313" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11" fill="#1C8F86">HTTPS pull on a schedule, or a push</text>
+
+  <text x="28" y="386" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11" font-weight="700" letter-spacing="1.4" fill="#9AA3AF">COLLECTOR</text>
+
+  <rect x="28" y="400" width="904" height="168" rx="14" fill="#E5F6F2" stroke="#7DBFB4"/>
+  <text x="48" y="432" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#1B2A4A">Central collector</text>
+  <text x="48" y="458" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5C6770">Windows or Linux. TCP 8780 on the LAN interface named in config.</text>
+  <text x="48" y="480" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5C6770">Pull at startup and every interval. POST /api/pull runs one pass now.</text>
+  <text x="48" y="502" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5C6770">Retry 429 and 5xx with backoff. 401, 403, and 404 are not retried.</text>
+  <text x="48" y="524" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5C6770">Store data/site/edge/timestamp. Keep the last N. Same bytes are idempotent.</text>
+  <text x="48" y="546" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5C6770">Bearer token from the environment. It is not written to disk or to the log.</text>
+
+  <line x1="250" y1="568" x2="250" y2="612" stroke="#1C8F86" stroke-width="1.75" stroke-dasharray="5 4" marker-end="url(#t)"/>
+  <line x1="710" y1="568" x2="710" y2="612" stroke="#1C8F86" stroke-width="1.75" stroke-dasharray="5 4" marker-end="url(#t)"/>
+
+  <rect x="28" y="620" width="440" height="168" rx="14" fill="#E5F6F2" stroke="#7DBFB4"/>
+  <text x="48" y="650" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#1B2A4A">Unified 223P model</text>
+  <text x="48" y="676" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5C6770">One named graph per edge.</text>
+  <text x="48" y="698" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5C6770">TriG and N-Quads keep provenance.</text>
+  <text x="48" y="720" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5C6770">Turtle is the union, the default graph.</text>
+  <text x="48" y="742" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5C6770">Shared bacnet:// IRIs collapse to one node.</text>
+  <text x="48" y="764" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5C6770">Blank nodes are skolemized per edge.</text>
+
+  <rect x="492" y="620" width="440" height="168" rx="14" fill="#F5F6F8" stroke="#D8DCE3"/>
+  <text x="512" y="650" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#1B2A4A">reconcile and validation</text>
+  <text x="512" y="676" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5C6770">Pairs edges that share a bacnet:// ref.</text>
+  <text x="512" y="698" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5C6770">duplicate-collapsed: same name and unit.</text>
+  <text x="512" y="720" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5C6770">conflicting: both values stay in the union.</text>
+  <text x="512" y="742" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5C6770">223P SHACL runs on the merged graph.</text>
+  <text x="512" y="764" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5C6770">The collector does not pick a winner.</text>
+
+  <line x1="480" y1="788" x2="480" y2="828" stroke="#1C8F86" stroke-width="1.75" stroke-dasharray="5 4" marker-end="url(#t)"/>
+  <rect x="360" y="796" width="240" height="18" rx="5" fill="#ffffff"/>
+  <text x="480" y="809" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#1C8F86">Unified model, not live polling</text>
+
+  <rect x="150" y="836" width="660" height="72" rx="14" fill="#F5F6F8" stroke="#D8DCE3"/>
+  <text x="480" y="866" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#1B2A4A">Analytics platform</text>
+  <text x="480" y="888" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5C6770">Can read the unified model. Illustrative, not a default pipeline.</text>
+
+  <rect x="28" y="932" width="904" height="150" rx="14" fill="#FAFBFC" stroke="#E5E7EB"/>
+  <text x="48" y="958" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11" font-weight="700" letter-spacing="1.4" fill="#9AA3AF">LEGEND</text>
+
+  <line x1="48" y1="986" x2="86" y2="986" stroke="#1C8F86" stroke-width="1.75" stroke-dasharray="5 4" marker-end="url(#t)"/>
+  <text x="96" y="990" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5C6770">HTTPS pull, bearer token</text>
+  <line x1="340" y1="986" x2="378" y2="986" stroke="#7A4EBF" stroke-width="1.75" marker-end="url(#p)"/>
+  <text x="388" y="990" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5C6770">Optional authenticated push</text>
+
+  <rect x="48" y="1010" width="18" height="14" rx="3" fill="#E7F1FB" stroke="#8FB4DE"/>
+  <text x="74" y="1022" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5C6770">BACnet edge</text>
+  <rect x="200" y="1010" width="18" height="14" rx="3" fill="#F3EEF8" stroke="#C4B3DE"/>
+  <text x="226" y="1022" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5C6770">Niagara edge</text>
+  <rect x="370" y="1010" width="18" height="14" rx="3" fill="#E5F6F2" stroke="#7DBFB4"/>
+  <text x="396" y="1022" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5C6770">223P collector</text>
+  <rect x="540" y="1010" width="18" height="14" rx="3" fill="#F5F6F8" stroke="#D8DCE3"/>
+  <text x="566" y="1022" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5C6770">Report or analytics</text>
+
+  <line x1="48" y1="1054" x2="86" y2="1054" stroke="#1B2A4A" stroke-width="1.75"/>
+  <text x="96" y="1058" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5C6770">Solid: push</text>
+  <line x1="220" y1="1054" x2="258" y2="1054" stroke="#1B2A4A" stroke-width="1.75" stroke-dasharray="5 4"/>
+  <text x="268" y="1058" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5C6770">Dashed: pull or model</text>
+
+  <text x="28" y="1116" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#6B7280">SPARQL stays off unless the config sets sparql. The firewall port to open on Windows is 8780.</text>
+  <text x="28" y="1138" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#6B7280">A conflict is reported. Both triples remain. Nothing is written back to the BAS.</text>
+</svg>
