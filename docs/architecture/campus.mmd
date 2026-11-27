@@ -1,38 +1,15 @@
 flowchart TB
-  subgraph ot [OT network — separate from IT and cloud]
-    direction LR
-    subgraph b1 [Building — Niagara]
-      SUP["Supervisor"]
-      J1["JACE"]
-      J2["JACE"]
-      SUP --- J1
-      SUP --- J2
-      E1["Edge\none driver profile"]
-      SUP -->|"read-only\nneeded points"| E1
-    end
-    subgraph b2 [Building — BACnet/IP]
-      DEV["BACnet/IP controllers"]
-      E2["Edge"]
-      DEV -->|"read-only\nneeded points"| E2
-    end
-    subgraph b3 [Building — MS/TP]
-      RTR["BACnet router"]
-      MSTP["MS/TP segment"]
-      RTR --- MSTP
-      E3["Edge\none per segment"]
-      RTR -->|"read-only\nneeded points"| E3
-    end
-    subgraph b4 [Building — mixed]
-      MIX["Niagara and BACnet/IP"]
-      E4["Edge per network"]
-      MIX -->|"read-only\nneeded points"| E4
-    end
+  subgraph a [Building A — BACnet/IP BAS]
+    A1[Existing BAS] -->|BACnet read UDP 47808| A2["Linux edge\nBACpypes3"]
   end
-
-  E1 --> LAKE["223P RDF data lake\nHaystack overlay only"]
-  E2 --> LAKE
-  E3 --> LAKE
-  E4 --> LAKE
-  LAKE --> FDD["Open-FDD\nwrites off by default"]
-  IT["IT and cloud\nnot on the OT network"]
-  FDD -.->|"no default path"| IT
+  subgraph b [Building B — Niagara / JACE]
+    B1[Existing BAS] -->|read-only WSS| B2["Linux edge\nbaskStream"]
+  end
+  subgraph c [Building C — BACnet MS/TP]
+    C1["Existing BAS\nrouter in front"] -->|via router| C2["Linux edge\nBACnet/IP to the router"]
+  end
+  A2 -. 223P Turtle .-> M
+  B2 -. 223P Turtle .-> M
+  C2 -. 223P Turtle .-> M
+  M["ASHRAE 223P common model\nbacnet:// refs\nHaystack overlay only"]
+  M -. model file .-> P["General-purpose IoT / analytics platform\nillustrative, not a default pipeline"]

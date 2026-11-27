@@ -1,6 +1,6 @@
 # Architecture
 
-Two pictures. Mermaid sources sit next to the SVGs.
+Two pictures, drawn as SVG. The Mermaid files record the same structure. They are not the picture source.
 
 - [Test bench](test-bench.svg) ([source](test-bench.mmd))
 - [Campus](campus.svg) ([source](campus.mmd))

@@ -7,9 +7,9 @@ Edge software for HVAC networks. ASHRAE 223P is the model. Haystack tags are an 
 
 Neither driver maps or polls every point on a live system. History is server-side DuckDB, with Parquet snapshots on disk. There is no DuckDB-WASM build. `reconcile` joins the two 223P graphs.
 
-![Test bench](docs/architecture/test-bench.svg)
+![01 | Two-Pi test bench](docs/architecture/test-bench.svg)
 
-![Campus](docs/architecture/campus.svg)
+![02 | Campus-scale edge architecture](docs/architecture/campus.svg)
 
 Diagram notes and Mermaid sources: [docs/architecture/](docs/architecture/README.md).
 

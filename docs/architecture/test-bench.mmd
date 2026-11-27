@@ -1,25 +1,14 @@
 flowchart TB
-  subgraph ot [Bench OT network]
-    FEC["JCI FEC field controller\nBACnet/IP"]
-    STA["Niagara station\nbaskStream service"]
+  subgraph field [FIELD / BAS NETWORK]
+    FEC["JCI FEC\nBACnet/IP UDP 47808"]
+    STA["Niagara station\nbaskStream, HTTPS URL"]
   end
-
-  subgraph pi1 [Worker Pi 1 — BACnet profile]
-    BP["BACpypes3 BACnet/IP driver\nWho-Is and object catalog\nReadProperty and ReadPropertyMultiple\npriority array\nwrites off"]
+  subgraph edge [EDGE WORKERS]
+    PI1["Worker Pi 1\nBACpypes3\nWho-Is / I-Am, ReadProperty,\nReadPropertyMultiple, priority array\nwrites off"]
+    PI2["Worker Pi 2\nbaskStream WSS, read-only\npoints file only"]
   end
-
-  subgraph pi2 [Worker Pi 2 — Niagara profile]
-    BS["baskStream client\nauthenticated WebSocket\nread-only"]
-  end
-
-  FEC -->|"configured points only"| BP
-  STA -->|"configured points only"| BS
-  BP --> TTL1["223P TTL\nbacnet:// refs\nQUDT local-name units"]
-  BS --> TTL2["223P TTL\nbacnet:// refs\nHaystack overlay"]
-  TTL1 --> REC["reconcile\nmatched / missing"]
-  TTL2 --> REC
-  BP --> DB["DuckDB in memory\nParquet history on disk"]
-  BS --> DB
-  DB --> Q["read-only SQL\nSPARQL route off unless enabled"]
-  TTL1 --> EXP["model export\nOpen-FDD rules"]
-  TTL2 --> EXP
+  FEC -->|BACnet read| PI1
+  STA -->|read-only WebSocket| PI2
+  PI1 -. 223P Turtle .-> M
+  PI2 -. 223P Turtle .-> M
+  M["ASHRAE 223P\nbacnet:// refs, QUDT local names\nHaystack overlay only\nreconcile compares the files"]

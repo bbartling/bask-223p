@@ -1,58 +1,142 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="820" viewBox="0 0 1100 820" role="img" aria-labelledby="title desc">
-  <title id="title">Campus</title>
-  <desc id="desc">Several buildings on Niagara, BACnet/IP, MS/TP, or a mix. One edge per building or network segment. A 223P data lake and Open-FDD sit above a read-only OT network that stays separate from IT and cloud.</desc>
-  <rect width="1100" height="820" fill="#f6f4ef"/>
-  <text x="40" y="42" font-family="Segoe UI, sans-serif" font-size="22" font-weight="700" fill="#1c2b33">Campus</text>
-  <text x="40" y="66" font-family="Segoe UI, sans-serif" font-size="13" fill="#4d5c66">Generic layout. Read-only by default. Only the needed points are mapped.</text>
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="1120" viewBox="0 0 960 1120" role="img" aria-labelledby="title desc">
+  <title id="title">02 | Campus-scale edge architecture</title>
+  <desc id="desc">Illustrative campus. Three buildings, each with an existing BAS and one Linux edge. They share an ASHRAE 223P model. Not a default pipeline.</desc>
+  <rect width="960" height="1120" fill="#ffffff"/>
+  <defs>
+    <marker id="b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 Z" fill="#2F6FDB"/>
+    </marker>
+    <marker id="p" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 Z" fill="#7A4EBF"/>
+    </marker>
+    <marker id="t" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 Z" fill="#1C8F86"/>
+    </marker>
+  </defs>
 
-  <rect x="40" y="88" width="1020" height="470" rx="14" fill="#e7eef2" stroke="#1f3a4d"/>
-  <text x="60" y="116" font-family="Segoe UI, sans-serif" font-size="14" font-weight="700" fill="#1f3a4d">OT network</text>
+  <text x="28" y="44" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="26" font-weight="700" fill="#1B2A4A">02 | Campus-scale edge architecture</text>
+  <text x="28" y="70" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="14" fill="#6B7280">Illustrative, not a default pipeline. One edge per building or network segment.</text>
 
-  <rect x="64" y="140" width="470" height="190" rx="10" fill="#ffffff" stroke="#1f3a4d"/>
-  <text x="80" y="166" font-family="Segoe UI, sans-serif" font-size="14" font-weight="700" fill="#1c2b33">Building — Niagara</text>
-  <text x="80" y="190" font-family="Segoe UI, sans-serif" font-size="13" fill="#4d5c66">Supervisor and JACEs</text>
-  <text x="80" y="214" font-family="Segoe UI, sans-serif" font-size="13" fill="#1c2b33">Edge on the supervisor network</text>
-  <text x="80" y="238" font-family="Segoe UI, sans-serif" font-size="13" fill="#1c2b33">baskStream, read-only, points file only</text>
-  <text x="80" y="270" font-family="Segoe UI, sans-serif" font-size="13" fill="#4d5c66">One edge for that building</text>
-  <text x="80" y="294" font-family="Segoe UI, sans-serif" font-size="13" fill="#8a3b12">Writes off</text>
+  <text x="28" y="106" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11" font-weight="700" letter-spacing="1.4" fill="#9AA3AF">BUILDING OT NETWORKS</text>
 
-  <rect x="566" y="140" width="470" height="190" rx="10" fill="#ffffff" stroke="#1f3a4d"/>
-  <text x="582" y="166" font-family="Segoe UI, sans-serif" font-size="14" font-weight="700" fill="#1c2b33">Building — BACnet/IP</text>
-  <text x="582" y="190" font-family="Segoe UI, sans-serif" font-size="13" fill="#4d5c66">Controllers on the IP network</text>
-  <text x="582" y="214" font-family="Segoe UI, sans-serif" font-size="13" fill="#1c2b33">Edge running the BACpypes3 driver</text>
-  <text x="582" y="238" font-family="Segoe UI, sans-serif" font-size="13" fill="#1c2b33">Read, read-multiple, priority array, scan</text>
-  <text x="582" y="270" font-family="Segoe UI, sans-serif" font-size="13" fill="#4d5c66">Named devices only. No full object poll</text>
-  <text x="582" y="294" font-family="Segoe UI, sans-serif" font-size="13" fill="#8a3b12">Writes off</text>
+  <!-- Building A -->
+  <rect x="20" y="120" width="300" height="332" rx="16" fill="#F5F6F8" stroke="#D8DCE3"/>
+  <path d="M40 146 L52 134 L64 146" fill="none" stroke="#5C6770" stroke-width="1.4"/>
+  <path d="M43 146 V158 H61 V146" fill="none" stroke="#5C6770" stroke-width="1.4"/>
+  <text x="74" y="150" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#1B2A4A">Building A</text>
+  <text x="74" y="168" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#6B7280">BACnet/IP BAS</text>
 
-  <rect x="64" y="348" width="470" height="186" rx="10" fill="#ffffff" stroke="#1f3a4d"/>
-  <text x="80" y="374" font-family="Segoe UI, sans-serif" font-size="14" font-weight="700" fill="#1c2b33">Building — MS/TP</text>
-  <text x="80" y="398" font-family="Segoe UI, sans-serif" font-size="13" fill="#4d5c66">BACnet router in front of the trunk</text>
-  <text x="80" y="422" font-family="Segoe UI, sans-serif" font-size="13" fill="#1c2b33">One edge per network segment</text>
-  <text x="80" y="446" font-family="Segoe UI, sans-serif" font-size="13" fill="#1c2b33">Route-aware addresses kept</text>
-  <text x="80" y="470" font-family="Segoe UI, sans-serif" font-size="13" fill="#1c2b33">Slow trunk: few points, paced reads</text>
-  <text x="80" y="502" font-family="Segoe UI, sans-serif" font-size="13" fill="#8a3b12">Writes off</text>
+  <rect x="36" y="186" width="268" height="78" rx="12" fill="#E7F1FB" stroke="#8FB4DE"/>
+  <text x="50" y="212" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="#1B2A4A">Existing BAS</text>
+  <text x="50" y="232" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#5C6770">BACnet/IP controllers</text>
+  <text x="50" y="250" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#5C6770">UDP 47808</text>
 
-  <rect x="566" y="348" width="470" height="186" rx="10" fill="#ffffff" stroke="#1f3a4d"/>
-  <text x="582" y="374" font-family="Segoe UI, sans-serif" font-size="14" font-weight="700" fill="#1c2b33">Building — mixed</text>
-  <text x="582" y="398" font-family="Segoe UI, sans-serif" font-size="13" fill="#4d5c66">Niagara supervisor and plain BACnet/IP</text>
-  <text x="582" y="422" font-family="Segoe UI, sans-serif" font-size="13" fill="#1c2b33">One edge per network, not one for both</text>
-  <text x="582" y="446" font-family="Segoe UI, sans-serif" font-size="13" fill="#1c2b33">Same 223P TTL shape from either driver</text>
-  <text x="582" y="470" font-family="Segoe UI, sans-serif" font-size="13" fill="#1c2b33">bacnet:// identity, QUDT local-name units</text>
-  <text x="582" y="502" font-family="Segoe UI, sans-serif" font-size="13" fill="#8a3b12">Writes off</text>
+  <line x1="170" y1="264" x2="170" y2="300" stroke="#2F6FDB" stroke-width="1.75" marker-end="url(#b)"/>
+  <rect x="118" y="272" width="104" height="18" rx="5" fill="#F5F6F8"/>
+  <text x="170" y="285" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11" fill="#2F6FDB">BACnet read</text>
 
-  <line x1="550" y1="558" x2="550" y2="590" stroke="#1f3a4d" stroke-width="1.5"/>
-  <polygon points="550,598 545,586 555,586" fill="#1f3a4d"/>
+  <rect x="36" y="304" width="268" height="128" rx="12" fill="#E7F1FB" stroke="#8FB4DE"/>
+  <text x="50" y="328" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="#1B2A4A">Linux IoT edge device</text>
+  <text x="50" y="350" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#5C6770">BACnet driver, BACpypes3</text>
+  <text x="50" y="368" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#5C6770">Who-Is, ReadProperty, RPM</text>
+  <text x="50" y="386" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#5C6770">Priority array</text>
+  <text x="50" y="404" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#5C6770">Writes off by default</text>
 
-  <rect x="220" y="598" width="660" height="64" rx="10" fill="#1f3a4d"/>
-  <text x="550" y="624" text-anchor="middle" font-family="Segoe UI, sans-serif" font-size="15" font-weight="700" fill="#ffffff">223P RDF data lake</text>
-  <text x="550" y="646" text-anchor="middle" font-family="Segoe UI, sans-serif" font-size="13" fill="#d5e4ea">Haystack is an overlay. The core model is 223P.</text>
+  <!-- Building B -->
+  <rect x="330" y="120" width="300" height="332" rx="16" fill="#F5F6F8" stroke="#D8DCE3"/>
+  <path d="M350 146 L362 134 L374 146" fill="none" stroke="#5C6770" stroke-width="1.4"/>
+  <path d="M353 146 V158 H371 V146" fill="none" stroke="#5C6770" stroke-width="1.4"/>
+  <text x="384" y="150" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#1B2A4A">Building B</text>
+  <text x="384" y="168" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#6B7280">Niagara / JACE</text>
 
-  <line x1="550" y1="662" x2="550" y2="688" stroke="#1f3a4d" stroke-width="1.5"/>
-  <polygon points="550,696 545,684 555,684" fill="#1f3a4d"/>
+  <rect x="346" y="186" width="268" height="78" rx="12" fill="#F3EEF8" stroke="#C4B3DE"/>
+  <text x="360" y="212" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="#1B2A4A">Existing BAS</text>
+  <text x="360" y="232" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#5C6770">Supervisor and JACEs</text>
+  <text x="360" y="250" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#5C6770">baskStream on the station</text>
 
-  <rect x="300" y="696" width="500" height="52" rx="10" fill="#0f6e6e"/>
-  <text x="550" y="728" text-anchor="middle" font-family="Segoe UI, sans-serif" font-size="15" font-weight="700" fill="#ffffff">Open-FDD</text>
+  <line x1="480" y1="264" x2="480" y2="300" stroke="#7A4EBF" stroke-width="1.75" marker-end="url(#p)"/>
+  <rect x="418" y="272" width="124" height="18" rx="5" fill="#F5F6F8"/>
+  <text x="480" y="285" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11" fill="#7A4EBF">Read-only WSS</text>
 
-  <rect x="40" y="764" width="1020" height="40" rx="8" fill="#fff6ee" stroke="#8a3b12"/>
-  <text x="550" y="789" text-anchor="middle" font-family="Segoe UI, sans-serif" font-size="13" fill="#8a3b12">IT and cloud stay off this network. There is no default path from the OT edges to either.</text>
+  <rect x="346" y="304" width="268" height="128" rx="12" fill="#F3EEF8" stroke="#C4B3DE"/>
+  <text x="360" y="328" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="#1B2A4A">Linux IoT edge device</text>
+  <text x="360" y="350" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#5C6770">WebSocket driver, baskStream</text>
+  <text x="360" y="368" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#5C6770">Authenticated WSS, read-only</text>
+  <text x="360" y="386" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#5C6770">Points file only</text>
+  <text x="360" y="404" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#5C6770">No station writes</text>
+
+  <!-- Building C -->
+  <rect x="640" y="120" width="300" height="332" rx="16" fill="#F5F6F8" stroke="#D8DCE3"/>
+  <path d="M660 146 L672 134 L684 146" fill="none" stroke="#5C6770" stroke-width="1.4"/>
+  <path d="M663 146 V158 H681 V146" fill="none" stroke="#5C6770" stroke-width="1.4"/>
+  <text x="694" y="150" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#1B2A4A">Building C</text>
+  <text x="694" y="168" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#6B7280">BACnet MS/TP</text>
+
+  <rect x="656" y="186" width="268" height="78" rx="12" fill="#E7F1FB" stroke="#8FB4DE"/>
+  <text x="670" y="212" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="#1B2A4A">Existing BAS</text>
+  <text x="670" y="232" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#5C6770">MS/TP trunk</text>
+  <text x="670" y="250" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#5C6770">BACnet router in front</text>
+
+  <line x1="790" y1="264" x2="790" y2="300" stroke="#2F6FDB" stroke-width="1.75" marker-end="url(#b)"/>
+  <rect x="738" y="272" width="104" height="18" rx="5" fill="#F5F6F8"/>
+  <text x="790" y="285" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11" fill="#2F6FDB">Via router</text>
+
+  <rect x="656" y="304" width="268" height="128" rx="12" fill="#E7F1FB" stroke="#8FB4DE"/>
+  <text x="670" y="328" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="#1B2A4A">Linux IoT edge device</text>
+  <text x="670" y="350" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#5C6770">BACnet driver via the router</text>
+  <text x="670" y="368" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#5C6770">Route-aware addresses kept</text>
+  <text x="670" y="386" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#5C6770">Paced reads on a slow trunk</text>
+  <text x="670" y="404" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#5C6770">Writes off by default</text>
+
+  <line x1="170" y1="452" x2="170" y2="508" stroke="#1C8F86" stroke-width="1.75" stroke-dasharray="5 4"/>
+  <line x1="480" y1="452" x2="480" y2="508" stroke="#1C8F86" stroke-width="1.75" stroke-dasharray="5 4"/>
+  <line x1="790" y1="452" x2="790" y2="508" stroke="#1C8F86" stroke-width="1.75" stroke-dasharray="5 4"/>
+  <line x1="170" y1="508" x2="790" y2="508" stroke="#1C8F86" stroke-width="1.75" stroke-dasharray="5 4"/>
+  <line x1="480" y1="508" x2="480" y2="536" stroke="#1C8F86" stroke-width="1.75" stroke-dasharray="5 4" marker-end="url(#t)"/>
+  <rect x="360" y="478" width="240" height="20" rx="5" fill="#ffffff"/>
+  <text x="480" y="492" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#1C8F86">223P Turtle export, bacnet:// refs</text>
+
+  <text x="28" y="560" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11" font-weight="700" letter-spacing="1.4" fill="#9AA3AF">COMMON SEMANTIC REPRESENTATION</text>
+
+  <rect x="20" y="574" width="920" height="108" rx="14" fill="#E5F6F2" stroke="#7DBFB4"/>
+  <text x="40" y="604" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#1B2A4A">ASHRAE 223P common model</text>
+  <text x="40" y="628" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5C6770">One identity shape from every edge. QUDT local-name units.</text>
+  <text x="40" y="648" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5C6770">Haystack is an overlay only. reconcile compares files that share a ref.</text>
+  <text x="40" y="668" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5C6770">The OT network stays separate from IT and cloud.</text>
+
+  <line x1="480" y1="682" x2="480" y2="724" stroke="#1C8F86" stroke-width="1.75" stroke-dasharray="5 4" marker-end="url(#t)"/>
+  <rect x="392" y="692" width="176" height="18" rx="5" fill="#ffffff"/>
+  <text x="480" y="705" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#1C8F86">Model file, not live polling</text>
+
+  <rect x="150" y="728" width="660" height="78" rx="14" fill="#F5F6F8" stroke="#D8DCE3"/>
+  <text x="480" y="758" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#1B2A4A">General-purpose IoT / analytics platform</text>
+  <text x="480" y="782" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5C6770">Can consume the 223P export. Illustrative, not a default pipeline.</text>
+
+  <rect x="20" y="830" width="920" height="150" rx="14" fill="#FAFBFC" stroke="#E5E7EB"/>
+  <text x="40" y="856" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11" font-weight="700" letter-spacing="1.4" fill="#9AA3AF">LEGEND</text>
+
+  <line x1="40" y1="884" x2="78" y2="884" stroke="#2F6FDB" stroke-width="1.75" marker-end="url(#b)"/>
+  <text x="88" y="888" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5C6770">BACnet read</text>
+  <line x1="230" y1="884" x2="268" y2="884" stroke="#7A4EBF" stroke-width="1.75" marker-end="url(#p)"/>
+  <text x="278" y="888" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5C6770">Niagara read-only WebSocket</text>
+  <line x1="540" y1="884" x2="578" y2="884" stroke="#1C8F86" stroke-width="1.75" stroke-dasharray="5 4" marker-end="url(#t)"/>
+  <text x="588" y="888" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5C6770">223P model export</text>
+
+  <rect x="40" y="908" width="18" height="14" rx="3" fill="#E7F1FB" stroke="#8FB4DE"/>
+  <text x="66" y="920" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5C6770">BACnet</text>
+  <rect x="160" y="908" width="18" height="14" rx="3" fill="#F3EEF8" stroke="#C4B3DE"/>
+  <text x="186" y="920" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5C6770">Niagara / JACE</text>
+  <rect x="340" y="908" width="18" height="14" rx="3" fill="#E5F6F2" stroke="#7DBFB4"/>
+  <text x="366" y="920" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5C6770">ASHRAE 223P</text>
+  <rect x="510" y="908" width="18" height="14" rx="3" fill="#F5F6F8" stroke="#D8DCE3"/>
+  <text x="536" y="920" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5C6770">Building panel</text>
+
+  <line x1="40" y1="952" x2="78" y2="952" stroke="#1B2A4A" stroke-width="1.75"/>
+  <text x="88" y="956" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5C6770">Solid: live data</text>
+  <line x1="250" y1="952" x2="288" y2="952" stroke="#1B2A4A" stroke-width="1.75" stroke-dasharray="5 4"/>
+  <text x="298" y="956" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#5C6770">Dashed: model or file export</text>
+
+  <text x="28" y="1020" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#6B7280">Each edge reads only the points it is given. It does not crawl the BAS. Writes are off by default.</text>
+  <text x="28" y="1042" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#6B7280">The Pi speaks BACnet/IP. An MS/TP trunk is reached through a router, not from the edge itself.</text>
+  <text x="28" y="1064" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#6B7280">IT and cloud are not on this network. There is no default path from the edges to either.</text>
 </svg>
