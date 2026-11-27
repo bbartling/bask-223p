@@ -28,9 +28,6 @@ from edge_microdot.ui_api import attach_ui_api
 
 LOG = logging.getLogger(__name__)
 
-DEFAULT_DUCKDB_WASM_URL = "/static/vendor/duckdb/duckdb-browser.mjs"
-DEFAULT_DUCKDB_WASM_BUNDLE_BASE = "/static/vendor/duckdb"
-
 def resolve_static_file(static_dir: Path, raw_path: str) -> Path | None:
     """Return a regular file inside ``static_dir``, or None.
 
@@ -378,20 +375,32 @@ def create_app(
     @app.get("/api/sql-rules")
     @protect
     async def sql_rules(request):
-        wasm_url = (
-            os.environ.get("EDGE_DUCKDB_WASM_URL", "").strip()
-            or os.environ.get("EDGE_DUCKDB_WASM_CDN", "").strip()
-            or DEFAULT_DUCKDB_WASM_URL
-        )
-        bundle_base = (
-            os.environ.get("EDGE_DUCKDB_WASM_BUNDLE_BASE", "").strip()
-            or DEFAULT_DUCKDB_WASM_BUNDLE_BASE
-        )
-        return {
-            "duckdb_wasm_url": wasm_url,
-            "duckdb_wasm_bundle_base": bundle_base,
-            "rules": fdd.list_sql_rules(),
-        }
+        return {"engine": "duckdb", "rules": fdd.list_sql_rules()}
+
+    @app.post("/api/sql")
+    @protect
+    async def run_sql(request):
+        try:
+            payload = request.json
+        except Exception:
+            return Response(
+                {"error": {"code": "bad_request", "message": "body must be JSON"}},
+                status_code=400,
+            )
+        body = payload if isinstance(payload, dict) else {}
+        params = body.get("params") or []
+        if not isinstance(params, list):
+            return Response(
+                {"error": {"code": "bad_request", "message": "params must be a list"}},
+                status_code=400,
+            )
+        try:
+            return await asyncio.to_thread(history.query_readonly, str(body.get("sql") or ""), params)
+        except ValueError as exc:
+            return Response({"error": {"code": "bad_request", "message": str(exc)}}, status_code=400)
+        except Exception as exc:
+            LOG.info("rejected SQL: %s", exc)
+            return Response({"error": {"code": "bad_request", "message": str(exc)}}, status_code=400)
 
     @app.get("/api/export/bundle")
     @protect

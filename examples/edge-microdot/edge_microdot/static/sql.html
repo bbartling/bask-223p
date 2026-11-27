@@ -3,14 +3,13 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>edge-microdot · SQL Explorer (DuckDB-WASM)</title>
+  <title>edge-microdot · SQL</title>
   <style>
     :root {
       color-scheme: dark;
       --bg: #0b0f14;
       --panel: #141b24;
       --accent: #3dd6c3;
-      --warn: #ffb020;
       --alarm: #ff5c5c;
       --text: #e8eef6;
       --muted: #8b9bb0;
@@ -34,7 +33,6 @@
       border-radius: 8px; padding: 0.45rem 0.65rem; font-size: 0.88rem;
     }
     button.primary { background: var(--accent); color: #042; border-color: var(--accent); font-weight: 600; cursor: pointer; }
-    button.secondary { cursor: pointer; }
     button:disabled { opacity: 0.5; cursor: not-allowed; }
     textarea {
       width: 100%; min-height: 210px; font-family: "JetBrains Mono", "Fira Code", Consolas, monospace;
@@ -52,30 +50,22 @@
   <header>
     <div class="brand">
       <h1>edge-microdot · SQL</h1>
-      <a class="nav" href="/">← Dashboard</a>
+      <a class="nav" href="/">Dashboard</a>
     </div>
-    <span class="pill" id="status">initializing DuckDB-WASM…</span>
+    <span class="pill" id="status">connecting…</span>
   </header>
   <main>
     <section class="panel">
       <div class="controls">
         <label for="ruleSelect">Query / Rule</label>
         <select id="ruleSelect"></select>
-        <label for="hoursSelect">Bundle window</label>
-        <select id="hoursSelect">
-          <option value="1">1 h</option>
-          <option value="6">6 h</option>
-          <option value="24" selected>24 h</option>
-          <option value="72">72 h</option>
-        </select>
-        <button class="secondary" id="reloadBtn" type="button">Reload bundle</button>
         <label for="paramsInput">Params (JSON)</label>
         <input id="paramsInput" type="text" size="22" placeholder="[]" />
-        <button class="primary" id="runBtn" type="button" disabled>Run in browser (Ctrl+Enter)</button>
+        <button class="primary" id="runBtn" type="button" disabled>Run on edge (Ctrl+Enter)</button>
       </div>
       <textarea id="sqlEditor" spellcheck="false"></textarea>
       <div class="meta-row">
-        <span id="bundleInfo">Tables: fdd.input_sample(site_id, point_key, ts, value), fdd.point (role = 223P snake_case input term), fdd.rule_result, sensor_history</span>
+        <span id="bundleInfo">Server DuckDB. Tables: fdd.input_sample, fdd.point, fdd.rule_result, sensor_history. History on disk is Parquet.</span>
         <span id="execInfo"></span>
       </div>
       <div class="err" id="errorBox"></div>
@@ -87,248 +77,6 @@
       </table>
     </section>
   </main>
-  
-  <script type="module">
-    const statusEl = document.getElementById('status');
-    const ruleSelect = document.getElementById('ruleSelect');
-    const hoursSelect = document.getElementById('hoursSelect');
-    const paramsInput = document.getElementById('paramsInput');
-    const sqlEditor = document.getElementById('sqlEditor');
-    const runBtn = document.getElementById('runBtn');
-    const reloadBtn = document.getElementById('reloadBtn');
-    const execInfo = document.getElementById('execInfo');
-    const errorBox = document.getElementById('errorBox');
-    const resultHead = document.getElementById('resultHead');
-    const resultBody = document.getElementById('resultBody');
-
-    const QUICK_QUERIES = [
-      {
-        filename: '__samples__',
-        name: 'Latest SI samples (fdd.input_sample)',
-        sql: 'SELECT ts, point_key, value FROM fdd.input_sample ORDER BY ts DESC LIMIT 50;',
-        default_params: [],
-      },
-      {
-        filename: '__points__',
-        name: 'Bound points (223P input terms)',
-        sql: 'SELECT point_key AS point_id, equipment_id AS equipment, role AS input_term, unit FROM fdd.point ORDER BY point_key;',
-        default_params: [],
-      },
-      {
-        filename: '__fdd__',
-        name: 'Recorded FDD results',
-        sql: 'SELECT window_end, equipment_id, rule_id, subject_key, status, fault_hours, covered_hours, role FROM fdd.rule_result ORDER BY window_end DESC LIMIT 50;',
-        default_params: [],
-      },
-    ];
-
-    let allQueries = [...QUICK_QUERIES];
-    let authHeaders = {};
-    let db = null;
-    let conn = null;
-
-    async function unzipEntries(arrayBuffer) {
-      const bytes = new Uint8Array(arrayBuffer);
-      const view = new DataView(arrayBuffer);
-      let eocd = -1;
-      for (let i = bytes.length - 22; i >= Math.max(0, bytes.length - 65557); i--) {
-        if (view.getUint32(i, true) === 0x06054b50) {
-          eocd = i;
-          break;
-        }
-      }
-      if (eocd < 0) throw new Error('Invalid ZIP bundle (EOCD not found)');
-      const totalEntries = view.getUint16(eocd + 10, true);
-      let ptr = view.getUint32(eocd + 16, true);
-      const decoder = new TextDecoder();
-      const out = {};
-      for (let idx = 0; idx < totalEntries; idx++) {
-        if (view.getUint32(ptr, true) !== 0x02014b50) throw new Error('Invalid ZIP central directory');
-        const method = view.getUint16(ptr + 10, true);
-        const compSize = view.getUint32(ptr + 20, true);
-        const nameLen = view.getUint16(ptr + 28, true);
-        const extraLen = view.getUint16(ptr + 30, true);
-        const commentLen = view.getUint16(ptr + 32, true);
-        const localOffset = view.getUint32(ptr + 42, true);
-        const name = decoder.decode(bytes.subarray(ptr + 46, ptr + 46 + nameLen));
-        ptr += 46 + nameLen + extraLen + commentLen;
-
-        if (view.getUint32(localOffset, true) !== 0x04034b50) throw new Error('Invalid ZIP local header');
-        const lNameLen = view.getUint16(localOffset + 26, true);
-        const lExtraLen = view.getUint16(localOffset + 28, true);
-        const dataStart = localOffset + 30 + lNameLen + lExtraLen;
-        const compressed = bytes.subarray(dataStart, dataStart + compSize);
-        if (method === 0) {
-          out[name] = compressed.slice();
-        } else if (method === 8) {
-          const ds = new DecompressionStream('deflate-raw');
-          const writer = ds.writable.getWriter();
-          writer.write(compressed);
-          writer.close();
-          const buf = await new Response(ds.readable).arrayBuffer();
-          out[name] = new Uint8Array(buf);
-        } else {
-          throw new Error('Unsupported ZIP compression method ' + method + ' for ' + name);
-        }
-      }
-      return out;
-    }
-
-    async function loadToken() {
-      const resp = await fetch('/auth/ws-token', { credentials: 'include' });
-      if (!resp.ok) {
-        location.href = '/login';
-        throw new Error('Authentication required');
-      }
-      const data = await resp.json();
-      authHeaders = { Authorization: 'Bearer ' + data.access_token };
-    }
-
-    async function initDuckDb(wasmUrl, bundleBase) {
-      statusEl.textContent = 'loading DuckDB-WASM…';
-      const duckdb = await import(wasmUrl);
-      let bundle;
-      if (!bundleBase) {
-        throw new Error('DuckDB-WASM bundle base is not configured');
-      }
-      const base = bundleBase.replace(/\/$/, '');
-      bundle = {
-        mainModule: base + '/duckdb-eh.wasm',
-        mainWorker: base + '/duckdb-browser-eh.worker.js',
-      };
-      const workerBlob = new Blob(['importScripts("' + bundle.mainWorker + '");'], { type: 'text/javascript' });
-      const worker = new Worker(URL.createObjectURL(workerBlob));
-      const logger = new duckdb.ConsoleLogger(duckdb.LogLevel.WARNING);
-      db = new duckdb.AsyncDuckDB(logger, worker);
-      await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
-      conn = await db.connect();
-      await conn.query("SET TimeZone = 'UTC'");
-    }
-
-    async function loadBundle() {
-      statusEl.textContent = 'fetching Parquet bundle…';
-      errorBox.textContent = '';
-      const hours = hoursSelect.value || '24';
-      const resp = await fetch('/api/export/bundle?hours=' + hours, { headers: authHeaders });
-      if (!resp.ok) throw new Error('Bundle export failed: HTTP ' + resp.status);
-      const zipBuf = await resp.arrayBuffer();
-      const files = await unzipEntries(zipBuf);
-      const needed = ['input_sample.parquet', 'point.parquet', 'rule_result.parquet'];
-      for (const fname of needed) {
-        if (!files[fname]) throw new Error('Missing ' + fname + ' in bundle');
-        await db.registerFileBuffer(fname, files[fname]);
-      }
-      await conn.query("CREATE SCHEMA IF NOT EXISTS fdd");
-      await conn.query("CREATE OR REPLACE VIEW fdd.input_sample AS SELECT * FROM read_parquet('input_sample.parquet')");
-      await conn.query("CREATE OR REPLACE VIEW fdd.point AS SELECT * FROM read_parquet('point.parquet')");
-      await conn.query("CREATE OR REPLACE VIEW fdd.rule_result AS SELECT * FROM read_parquet('rule_result.parquet')");
-      await conn.query(
-        "CREATE OR REPLACE VIEW sensor_history AS SELECT p.equipment_id, p.point_key AS series_id, p.role AS sensor_role, s.ts AS timestamp_utc, s.value, p.unit FROM fdd.input_sample s JOIN fdd.point p ON p.site_id = s.site_id AND p.point_key = s.point_key"
-      );
-      const cntRes = await conn.query('SELECT COUNT(*) AS n FROM fdd.input_sample');
-      const nSamples = Number(cntRes.toArray()[0]?.n ?? 0);
-      statusEl.textContent = 'ready (browser WASM) · ' + nSamples + ' samples (' + hours + 'h)';
-      runBtn.disabled = false;
-    }
-
-    function renderTable(arrowResult) {
-      const fields = arrowResult.schema.fields.map(f => f.name);
-      const rows = arrowResult.toArray();
-      resultHead.innerHTML = '';
-      resultBody.innerHTML = '';
-      const trh = document.createElement('tr');
-      for (const name of fields) {
-        const th = document.createElement('th');
-        th.textContent = name;
-        trh.appendChild(th);
-      }
-      resultHead.appendChild(trh);
-      for (const row of rows) {
-        const tr = document.createElement('tr');
-        for (const name of fields) {
-          const td = document.createElement('td');
-          const val = row[name];
-          td.textContent = val === null || val === undefined ? '' : String(val);
-          tr.appendChild(td);
-        }
-        resultBody.appendChild(tr);
-      }
-      return rows.length;
-    }
-
-    async function runQuery() {
-      if (!conn) return;
-      errorBox.textContent = '';
-      const sql = sqlEditor.value.trim();
-      if (!sql) return;
-      const t0 = performance.now();
-      try {
-        const rawParams = paramsInput.value.trim();
-        const params = rawParams ? JSON.parse(rawParams) : [];
-        let res;
-        if (Array.isArray(params) && params.length > 0) {
-          const stmt = await conn.prepare(sql);
-          try {
-            res = await stmt.query(...params);
-          } finally {
-            await stmt.close();
-          }
-        } else {
-          res = await conn.query(sql);
-        }
-        const n = renderTable(res);
-        const dt = (performance.now() - t0).toFixed(1);
-        execInfo.textContent = n + ' row(s) in ' + dt + ' ms (local DuckDB-WASM)';
-      } catch (err) {
-        errorBox.textContent = String(err && err.message ? err.message : err);
-      }
-    }
-
-    function selectQuery(idx) {
-      const q = allQueries[idx] || allQueries[0];
-      sqlEditor.value = q.sql;
-      paramsInput.value = q.default_params && q.default_params.length ? JSON.stringify(q.default_params) : '[]';
-    }
-
-    ruleSelect.addEventListener('change', () => selectQuery(Number(ruleSelect.value)));
-    runBtn.addEventListener('click', runQuery);
-    reloadBtn.addEventListener('click', async () => {
-      try {
-        await loadBundle();
-        await runQuery();
-      } catch (err) {
-        errorBox.textContent = String(err);
-      }
-    });
-    sqlEditor.addEventListener('keydown', (ev) => {
-      if ((ev.ctrlKey || ev.metaKey) && ev.key === 'Enter') {
-        ev.preventDefault();
-        runQuery();
-      }
-    });
-
-    async function bootstrap() {
-      try {
-        await loadToken();
-        const cfg = await fetch('/api/sql-rules', { headers: authHeaders }).then(r => r.json());
-        allQueries = [...QUICK_QUERIES, ...(cfg.rules || [])];
-        ruleSelect.innerHTML = '';
-        allQueries.forEach((item, idx) => {
-          const opt = document.createElement('option');
-          opt.value = String(idx);
-          opt.textContent = item.filename.startsWith('__') ? item.name : ('sql/fdd/rules/' + item.filename);
-          ruleSelect.appendChild(opt);
-        });
-        selectQuery(0);
-        await initDuckDb(cfg.duckdb_wasm_url, cfg.duckdb_wasm_bundle_base);
-        await loadBundle();
-        await runQuery();
-      } catch (err) {
-        statusEl.textContent = 'error';
-        errorBox.textContent = String(err && err.stack ? err.stack : err);
-      }
-    }
-    bootstrap();
-  </script>
+  <script src="/static/sql.js"></script>
 </body>
 </html>

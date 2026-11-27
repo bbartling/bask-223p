@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="760" viewBox="0 0 1100 760" role="img" aria-labelledby="title desc">
+  <title id="title">Test bench</title>
+  <desc id="desc">Worker Pi 1 runs BACpypes3 against a JCI FEC. Worker Pi 2 runs a read-only baskStream client against a Niagara station. Both emit 223P TTL with bacnet:// refs, compared by reconcile, and both write DuckDB history to Parquet.</desc>
+  <rect width="1100" height="760" fill="#f6f4ef"/>
+  <text x="40" y="42" font-family="Segoe UI, sans-serif" font-size="22" font-weight="700" fill="#1c2b33">Test bench</text>
+  <text x="40" y="66" font-family="Segoe UI, sans-serif" font-size="13" fill="#4d5c66">One driver per Pi. Writes off. Only the points file is polled.</text>
+
+  <rect x="40" y="90" width="1020" height="130" rx="12" fill="#e7eef2" stroke="#1f3a4d"/>
+  <text x="60" y="116" font-family="Segoe UI, sans-serif" font-size="13" font-weight="700" fill="#1f3a4d">Bench OT network</text>
+  <rect x="80" y="136" width="420" height="64" rx="8" fill="#ffffff" stroke="#1f3a4d"/>
+  <text x="96" y="162" font-family="Segoe UI, sans-serif" font-size="15" font-weight="700" fill="#1c2b33">JCI FEC</text>
+  <text x="96" y="182" font-family="Segoe UI, sans-serif" font-size="13" fill="#4d5c66">Field controller, BACnet/IP</text>
+  <rect x="600" y="136" width="420" height="64" rx="8" fill="#ffffff" stroke="#1f3a4d"/>
+  <text x="616" y="162" font-family="Segoe UI, sans-serif" font-size="15" font-weight="700" fill="#1c2b33">Niagara station</text>
+  <text x="616" y="182" font-family="Segoe UI, sans-serif" font-size="13" fill="#4d5c66">baskStream service, authenticated WebSocket</text>
+
+  <line x1="290" y1="200" x2="290" y2="250" stroke="#1f3a4d" stroke-width="1.5"/>
+  <polygon points="290,258 285,246 295,246" fill="#1f3a4d"/>
+  <line x1="810" y1="200" x2="810" y2="250" stroke="#1f3a4d" stroke-width="1.5"/>
+  <polygon points="810,258 805,246 815,246" fill="#1f3a4d"/>
+
+  <rect x="40" y="258" width="500" height="168" rx="12" fill="#ffffff" stroke="#0f6e6e" stroke-width="1.5"/>
+  <text x="60" y="284" font-family="Segoe UI, sans-serif" font-size="14" font-weight="700" fill="#0f6e6e">Worker Pi 1 — profile bacnet</text>
+  <text x="60" y="308" font-family="Segoe UI, sans-serif" font-size="13" fill="#1c2b33">BACpypes3 BACnet/IP, host network, UDP 47808</text>
+  <text x="60" y="330" font-family="Segoe UI, sans-serif" font-size="13" fill="#1c2b33">Demoed: Who-Is, one-device object catalog,</text>
+  <text x="60" y="350" font-family="Segoe UI, sans-serif" font-size="13" fill="#1c2b33">ReadProperty, ReadPropertyMultiple, priority array</text>
+  <text x="60" y="370" font-family="Segoe UI, sans-serif" font-size="13" fill="#1c2b33">Devices named for Who-Is: 54545 and 5007</text>
+  <text x="60" y="394" font-family="Segoe UI, sans-serif" font-size="13" fill="#8a3b12">Writes off unless explicitly enabled for admin</text>
+
+  <rect x="560" y="258" width="500" height="168" rx="12" fill="#ffffff" stroke="#0f6e6e" stroke-width="1.5"/>
+  <text x="580" y="284" font-family="Segoe UI, sans-serif" font-size="14" font-weight="700" fill="#0f6e6e">Worker Pi 2 — profile niagara</text>
+  <text x="580" y="308" font-family="Segoe UI, sans-serif" font-size="13" fill="#1c2b33">baskStream client, read-only</text>
+  <text x="580" y="330" font-family="Segoe UI, sans-serif" font-size="13" fill="#1c2b33">Demoed: SCRAM, then HTTP Basic fallback</text>
+  <text x="580" y="350" font-family="Segoe UI, sans-serif" font-size="13" fill="#1c2b33">Polls the points file. Does not browse the station</text>
+  <text x="580" y="370" font-family="Segoe UI, sans-serif" font-size="13" fill="#1c2b33">No BACnet write route on this profile</text>
+  <text x="580" y="394" font-family="Segoe UI, sans-serif" font-size="13" fill="#4d5c66">Same history store and model export as Pi 1</text>
+
+  <line x1="290" y1="426" x2="290" y2="470" stroke="#1f3a4d" stroke-width="1.5"/>
+  <polygon points="290,478 285,466 295,466" fill="#1f3a4d"/>
+  <line x1="810" y1="426" x2="810" y2="470" stroke="#1f3a4d" stroke-width="1.5"/>
+  <polygon points="810,478 805,466 815,466" fill="#1f3a4d"/>
+
+  <rect x="80" y="478" width="420" height="64" rx="8" fill="#ffffff" stroke="#1f3a4d"/>
+  <text x="96" y="504" font-family="Segoe UI, sans-serif" font-size="14" font-weight="700" fill="#1c2b33">223P TTL</text>
+  <text x="96" y="524" font-family="Segoe UI, sans-serif" font-size="13" fill="#4d5c66">bacnet:// refs, QUDT local-name units</text>
+  <rect x="600" y="478" width="420" height="64" rx="8" fill="#ffffff" stroke="#1f3a4d"/>
+  <text x="616" y="504" font-family="Segoe UI, sans-serif" font-size="14" font-weight="700" fill="#1c2b33">223P TTL</text>
+  <text x="616" y="524" font-family="Segoe UI, sans-serif" font-size="13" fill="#4d5c66">bacnet:// refs, Haystack overlay only</text>
+
+  <line x1="290" y1="542" x2="290" y2="575" stroke="#1f3a4d" stroke-width="1.5"/>
+  <line x1="810" y1="542" x2="810" y2="560" stroke="#1f3a4d" stroke-width="1.5"/>
+  <line x1="290" y1="560" x2="810" y2="560" stroke="#1f3a4d" stroke-width="1.5"/>
+  <line x1="550" y1="560" x2="550" y2="575" stroke="#1f3a4d" stroke-width="1.5"/>
+  <polygon points="550,583 545,571 555,571" fill="#1f3a4d"/>
+
+  <rect x="330" y="583" width="440" height="52" rx="8" fill="#1f3a4d"/>
+  <text x="550" y="614" text-anchor="middle" font-family="Segoe UI, sans-serif" font-size="14" font-weight="700" fill="#ffffff">reconcile — matched, missing in Niagara, missing in scan</text>
+
+  <rect x="40" y="660" width="500" height="72" rx="8" fill="#ffffff" stroke="#1f3a4d"/>
+  <text x="56" y="686" font-family="Segoe UI, sans-serif" font-size="14" font-weight="700" fill="#1c2b33">DuckDB in memory, Parquet on disk</text>
+  <text x="56" y="708" font-family="Segoe UI, sans-serif" font-size="13" fill="#4d5c66">Server-side SQL. SPARQL route stays off unless enabled. No WASM.</text>
+  <rect x="560" y="660" width="500" height="72" rx="8" fill="#ffffff" stroke="#1f3a4d"/>
+  <text x="576" y="686" font-family="Segoe UI, sans-serif" font-size="14" font-weight="700" fill="#1c2b33">Model export</text>
+  <text x="576" y="708" font-family="Segoe UI, sans-serif" font-size="13" fill="#4d5c66">GET /api/model.ttl for Open-FDD rules. Publish stays off.</text>
+</svg>

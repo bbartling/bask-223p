@@ -20,6 +20,15 @@ from edge_microdot.units_si import normalize_si_unit, to_si
 
 LOG = logging.getLogger(__name__)
 
+
+def _json_cell(value: Any) -> Any:
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, datetime):
+        return value.isoformat()
+    return str(value)
+
+
 # Open-FDD fdd.input_sample / core.sql column contracts.
 INPUT_SAMPLE_COLUMNS = ("site_id", "point_key", "ts", "value")
 POINT_COLUMNS = (
@@ -1377,6 +1386,23 @@ class HistoryStore:
     def query(self, sql: str, params: list[Any] | None = None) -> list[tuple]:
         with self._lock:
             return list(self.conn.execute(sql, params or []).fetchall())
+
+    def query_readonly(self, sql: str, params: list[Any] | None = None, *, limit: int = 500) -> dict[str, Any]:
+        """Run one read-only statement against the in-memory store."""
+        from edge_microdot.sql_guard import validate_read_only_sql
+
+        cleaned = validate_read_only_sql(sql)
+        cap = max(1, min(int(limit), 1000))
+        bound = list(params or [])
+        with self._lock:
+            cur = self.conn.execute(cleaned, bound)
+            if cur.description is None:
+                return {"columns": [], "rows": [], "truncated": False}
+            columns = [d[0] for d in cur.description]
+            fetched = cur.fetchmany(cap + 1)
+        truncated = len(fetched) > cap
+        rows = [[_json_cell(cell) for cell in row] for row in fetched[:cap]]
+        return {"columns": columns, "rows": rows, "truncated": truncated}
 
     def query_history(
         self,
