@@ -279,7 +279,7 @@ curl -sS -H "Authorization: Bearer $TOKEN" -o bundle.zip \
 
 ## Model query
 
-Bearer token. Role: viewer or higher. Requires `EDGE_ENABLE_SPARQL=1` and pyoxigraph, otherwise SPARQL answers **503**.
+Bearer token. Role: viewer or higher. SPARQL is on by default. pyoxigraph is part of the edge install. An explicit `EDGE_ENABLE_SPARQL=0` turns it off, and the route answers **503**.
 
 ### POST /sparql
 
@@ -594,7 +594,7 @@ Configured points are the points loaded from the points file at process start. D
 ### GET /api/model.ttl
 
 - **Auth / role:** viewer, unless `EDGE_PUBLIC_MODEL=1`
-- **Response:** `text/turtle` of the 223P graph. When pyoxigraph is already loaded (`EDGE_ENABLE_SPARQL=1`), the bytes come from that store. Otherwise rdflib serializes the graph. An empty graph is still valid Turtle
+- **Response:** `text/turtle` of the 223P graph. With SPARQL on, the bytes come from the pyoxigraph store. An explicit `EDGE_ENABLE_SPARQL=0` uses rdflib. An empty graph is still valid Turtle
 - **Errors:** **401**, **429**, **304**
 
 ```bash

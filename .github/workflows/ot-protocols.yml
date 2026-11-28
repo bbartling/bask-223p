@@ -18,7 +18,7 @@ jobs:
       - name: Install the edge app at its pinned dependencies
         run: |
           python -m pip install -e .
-          python -m pip install -e "./examples/edge-microdot[sparql,dev,modbus]"
+          python -m pip install -e "./examples/edge-microdot[dev,modbus]"
       - name: Compare OT protocol pins with PyPI
         id: watch
         run: |
