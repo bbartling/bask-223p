@@ -133,10 +133,9 @@ def _device_instances(args: argparse.Namespace) -> list[int]:
     return out
 
 
-def _sparql_enabled(cfg) -> bool:
-    if os.environ.get("EDGE_ENABLE_SPARQL") is not None:
-        return _env_bool("EDGE_ENABLE_SPARQL")
-    return bool(cfg.graph and len(cfg.graph) > 0)
+def _sparql_enabled(_cfg) -> bool:
+    """On unless ``EDGE_ENABLE_SPARQL`` is explicitly off. A loaded TTL does not override ``0``."""
+    return _env_bool("EDGE_ENABLE_SPARQL", default=True)
 
 
 def _resolve_driver(args: argparse.Namespace) -> str:
