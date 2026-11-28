@@ -16,7 +16,7 @@ Each Pi runs one Compose profile of `examples/edge-microdot`. The profiles do no
 
 **Worker Pi 2** (`docker compose --profile niagara`) runs the baskStream client: authenticated WebSocket, read-only, SCRAM with an HTTP Basic fallback. It polls the points file. An empty file does not browse the station into the poll set. There is no BACnet write path on this profile.
 
-Both profiles keep history in an in-memory DuckDB database and write Parquet snapshots under `var/snapshots/`. `/sql` runs read-only SQL on that database. SPARQL is a route and stays off unless `EDGE_ENABLE_SPARQL=1`. Each Pi builds the 223P graph on the device (QUDT local-name units, `bacnet://` refs, Haystack only as an overlay) and serves it at `GET /api/model.ttl` and `GET /api/export.zip`.
+Both profiles keep history in an in-memory DuckDB database and write Parquet snapshots under `var/snapshots/`. `/sql` runs read-only SQL on that database. SPARQL is on unless `EDGE_ENABLE_SPARQL=0`. Each Pi builds the 223P graph on the device (QUDT local-name units, `bacnet://` refs, Haystack only as an overlay) and serves it at `GET /api/model.ttl` and `GET /api/export.zip`.
 
 The central collector is a third process, `python -m central`. On a schedule it pulls `GET /api/export.zip` from each Pi, stores one named graph per edge, and runs reconcile there. It does not run on the Pi, and it does not open a socket to the FEC, the BASrouter, or the station. See [central/README.md](../../central/README.md).
 

@@ -17,7 +17,7 @@ COPY examples/edge-microdot ./examples/edge-microdot
 
 RUN python -m pip install --no-cache-dir --upgrade pip \
     && python -m pip install --no-cache-dir -e . \
-    && python -m pip install --no-cache-dir -e "./examples/edge-microdot[sparql]" \
+    && python -m pip install --no-cache-dir -e "./examples/edge-microdot" \
     && mkdir -p /app/examples/edge-microdot/var \
     && useradd --uid 1000 --create-home edge \
     && chown -R edge:edge /app/examples/edge-microdot/var

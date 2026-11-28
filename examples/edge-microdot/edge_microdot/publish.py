@@ -288,7 +288,7 @@ def publish_cli(argv: Sequence[str] | None = None) -> int:
         points = resolve_points_path(Path(args.points) if args.points else None)
         cfg = load_config(points, site=site) if points else LoadedConfig(site=site)
         store = None
-        if env_flag("EDGE_ENABLE_SPARQL") and cfg.graph is not None and len(cfg.graph) > 0:
+        if env_flag("EDGE_ENABLE_SPARQL", default=True) and cfg.graph is not None and len(cfg.graph) > 0:
             from edge_microdot.sparql_kb import SparqlKb
 
             kb = SparqlKb(cfg.graph)
